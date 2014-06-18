@@ -1,0 +1,19 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@ --with python2,sphinxdoc
+
+override_dh_auto_build:
+	dh_auto_build
+	# HTML generator
+	PYTHONPATH=. http_proxy='localhost' sphinx-build -N -b html doc/ build/html
+	# Manpage generator
+	PYTHONPATH=. http_proxy='localhost' sphinx-build -N -b man doc/ build/man
+
+get-orig-tarball:
+	uscan --verbose --force-download
+
+clean:
+	dh $@
+	rm -rf *.egg-info
+
