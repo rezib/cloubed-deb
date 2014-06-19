@@ -1,0 +1,17 @@
+Source: cloubed
+Section: net
+Priority: optional
+Maintainer: Rémi Palancher <remi@rezib.org>
+Homepage: http://github.com/rezib/cloubed
+Build-Depends: debhelper (>= 8), python-all (>= 2.6.6-3~), python-setuptools
+X-Python-Version: >= 2.6
+Standards-Version: 3.9.3
+Vcs-Git: https://github.com/rezib/cloubed.git
+Vcs-Browser: https://github.com/rezib/cloubed
+
+Package: cloubed
+Architecture: all
+Depends: ${misc:Depends}, ${python:Depends}
+Description: Helpful tool to build virtual clusters.
+ Full description soon.
+

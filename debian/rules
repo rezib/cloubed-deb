@@ -1,0 +1,15 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@ --with python2
+
+override_dh_auto_build:
+	dh_auto_build
+
+get-orig-tarball:
+	uscan --verbose --force-download
+
+clean:
+	dh $@
+	rm -rf *.egg-info
+
