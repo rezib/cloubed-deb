@@ -24,7 +24,6 @@
 import logging
 import time
 import threading
-import libvirt
 from xml.dom.minidom import Document, parseString
 
 from CloubedException import CloubedException
@@ -32,245 +31,107 @@ from DomainTemplate import DomainTemplate
 from DomainSnapshot import DomainSnapshot
 from DomainNetif import DomainNetif
 from DomainDisk import DomainDisk
-from Utils import gen_mac,getuser
+from DomainVirtfs import DomainVirtfs
+from Utils import getuser
 
 class Domain:
 
     """ Domain class """
 
-    _domains = []
+    def __init__(self, tbd, domain_conf):
 
-    def __init__(self, conn, domain_conf):
-
-        self._conn = conn
+        self.tbd = tbd
+        self.ctl = self.tbd.ctl
         self._virtobj = None
-        self._name = domain_conf.get_name()
+        self.name = domain_conf.name
 
         use_namespace = True # should better be a conf parameter in the future
         if use_namespace:    # logic should moved be in an abstract parent class
-            self._libvirt_name = \
+            self.libvirt_name = \
                 "{user}:{testbed}:{name}" \
                     .format(user = getuser(),
-                            testbed = domain_conf.get_testbed(),
-                            name = self._name)
+                            testbed = domain_conf.testbed,
+                            name = self.name)
         else:
-            self._libvirt_name = self._name
+            self.libvirt_name = self.name
 
-        self._vcpu = domain_conf.get_cpu()
-        self._memory = domain_conf.get_memory()
+        self.vcpu = domain_conf.cpu
+        self.memory = domain_conf.memory
 
-        self._netifs = []
-        netifs_list = domain_conf.get_netifs_list()
+        self.netifs = []
         # ex: [ 'admin', 'backbone' ]
-        for netif in netifs_list:
-            network_name = netif["network"]
-            mac = gen_mac("{domain_name:s}-{network_name:s}" \
-                              .format(domain_name=self._name,
-                                      network_name=network_name))
-            if netif.has_key("ip"):
-                ip = netif["ip"]
-            else:
-                ip = None
-            netif = DomainNetif(self._name, mac, ip, network_name)
-            self._netifs.append(netif)
+        for netif in domain_conf.netifs:
+            netif = DomainNetif(self.tbd, self.name, netif)
+            self.netifs.append(netif)
 
-        self._disks = []
-        disks_dict = domain_conf.get_disks_dict()
-        # ex: { 'sda': 'vol-admin', 'sdb': 'vol-array' ]
-        for device, storage_volume_name in disks_dict.iteritems():
-            self._disks.append(DomainDisk(device, storage_volume_name))
+        self.disks = []
+        for disk in domain_conf.disks:
+            self.disks.append(DomainDisk(self.tbd, disk))
 
-        self._bootdev = None # defined at boot time
-        self._graphics = domain_conf.get_graphics()
+        self.cdrom = domain_conf.cdrom
 
-        self._templates = []
-        for template_conf in domain_conf.get_templates_list():
-            self._templates.append(DomainTemplate(template_conf))
+        self.virtfs = [ DomainVirtfs(virtfs["source"], virtfs["target"]) \
+                        for virtfs in domain_conf.virtfs ]
+
+        self.bootdev = None # defined at boot time
+        self.graphics = domain_conf.graphics
+
+        self.templates = []
+        for template_conf in domain_conf.template_files:
+            self.templates.append(DomainTemplate(template_conf))
 
         self._events = []
         self._doc = None
 
         self._lock = threading.Lock()
 
-        Domain._domains.append(self)
-
-    def __del__(self):
-
-        try:
-            Domain._domains.remove(self)
-        except ValueError:
-            pass
-
-    def __eq__(self, other): # needed for __del__
-
-        return self._name == other.get_name()
-
     #
     # accessors
     #
 
-    def get_name(self):
+    def get_storage_volumes(self):
 
-        """ get_name: Returns name of Domain """
+        """ Returns the list of storage volume of the Domain """
 
-        return self._name
+        return [ disk.storage_volume for disk in self.disks ]
 
-    def get_libvirt_name(self):
-
-        """ Returns name of Domain in libvirt """
-
-        return self._libvirt_name
-
-    def get_disks(self):
+    def get_storage_volumes_names(self):
 
         """ Returns the list of storage volume names of the Domain """
 
-        return [ disk.get_storage_volume_name() for disk in self._disks ]
+        return [ disk.get_storage_volume_name() for disk in self.disks ]
 
     def get_networks(self):
 
+        """ Returns the list of network of the Domain """
+
+        return [ netif.network for netif in self.netifs ]
+
+    def get_networks_names(self):
+
         """ Returns the list of network names of the Domain """
 
-        return [ netif.get_network_name() for netif in self._netifs ]
-
-    def get_netifs(self):
-
-        """ get_netifs: Returns the list of netifs of the Domain """
-
-        return self._netifs
-
-    def find_domain(self):
-
-        """
-            Search for any domain with the same name among all defined and
-            active domains in Libvirt. If one matches, returns it. Else returns
-            None.
-        """
-
-        # Workaround since no way to directly get list of names of all actives
-        # domains in Libvirt API
-        active_domains = [ self._conn.lookupByID(domain_id).name() \
-                               for domain_id in self._conn.listDomainsID() ]
-
-        domains = active_domains + self._conn.listDefinedDomains()
-        for domain_name in domains:
-
-            if domain_name == self._libvirt_name:
-
-                return self._conn.lookupByName(domain_name)
-
-        return None
+        return [ netif.get_network_name() for netif in self.netifs ]
 
     def get_infos(self):
+        """Returns a dict full of key/value string pairs with information about
+           the Domain.
         """
-            Returns a dict full of key/value string pairs with information about
-            the Domain
-        """
-
-        infos = {}
-
-        domain = self.find_domain()
-        if domain is not None:
-
-            # get libvirt status
-            infos['status'] = Domain.__get_status(domain.info()[0])
-
-            # extract infos out of libvirt XML
-            xml = parseString(domain.XMLDesc(0))
-
-            # IndexError exception is passed in order to continue silently
-            # if elements are not found in the XML tree
-
-            # spice port
-            try:
-                element = xml.getElementsByTagName('graphics').pop()
-                port = element.getAttribute('port')
-                infos['spice_port'] = str(port)
-            except IndexError:
-                pass
-
-        else:
-
-            infos['status'] =  Domain.__get_status(-1)
-
-        return infos
-
-    @staticmethod
-    def __get_status(state_code):
-        """
-            Returns the name of the status of the Domain in Libvirt according to
-            its state code
-        """
-
-        # Extracted from libvirt API documentation:
-        # enum virDomainState {
-        #   VIR_DOMAIN_NOSTATE     = 0 no state
-        #   VIR_DOMAIN_RUNNING     = 1 the domain is running
-        #   VIR_DOMAIN_BLOCKED     = 2 the domain is blocked on resource
-        #   VIR_DOMAIN_PAUSED      = 3 the domain is paused by user
-        #   VIR_DOMAIN_SHUTDOWN    = 4 the domain is being shut down
-        #   VIR_DOMAIN_SHUTOFF     = 5 the domain is shut off
-        #   VIR_DOMAIN_CRASHED     = 6 the domain is crashed
-        #   VIR_DOMAIN_PMSUSPENDED = 7 the domain is suspended by guest power
-        #                              management
-        #   VIR_DOMAIN_LAST        = 8 NB: this enum value will increase over
-        #                              time as new events are added to the
-        #                              libvirt API. It reflects the last state
-        #                              supported by this version of the libvirt
-        #                              API.
-        # }
-
-        states = [ "unknown",
-                   "running",
-                   "blocked",
-                   "paused",
-                   "shutdown",
-                   "shutoff",
-                   "crashed",
-                   "suspended" ]
-
-        if state_code == -1:
-            # special value introduced by get_infos() for own Cloubed use when
-            # domain is not yet defined in Libvirt
-            return 'undefined'
-        return states[state_code]
-
-    @classmethod
-    def get_by_name(cls, name):
-
-        """ Returns the Domain with this name """
-
-        for domain in cls._domains:
-            if domain.get_name() == name:
-                return domain
-
-        return None
-
-    @classmethod
-    def get_by_libvirt_name(cls, name):
-
-        """ Returns the Domain with this name """
-
-        for domain in cls._domains:
-            if domain.get_libvirt_name() == name:
-                return domain
-
-        return None
-
+        return self.ctl.info_domain(self.libvirt_name)
 
     def get_template_by_name(self, template_name):
 
         """ Returns the DomainTemplate with this name """
 
-        for template in self._templates:
-            if template.get_name() == template_name:
+        for template in self.templates:
+            if template.name == template_name:
                 return template
 
         # template not found therefore raise exception
         raise CloubedException(
                   "template {template} not defined for domain {domain}" \
                       .format(template = template_name,
-                              domain = self._name))
+                              domain = self.name))
 
     def xml(self):
 
@@ -285,12 +146,6 @@ class Domain:
 
         return self.xml().toxml()
 
-    def getvirtobj(self):
-
-        """ Returns the libvirt object of the Domain """
-
-        return self._virtobj
-
     def created(self):
 
         """ Returns True if the Domain has been created in libvirt """
@@ -303,77 +158,53 @@ class Domain:
             Destroys the Domain in libvirt
         """
 
-        domain = self.find_domain()
+        domain = self.ctl.find_domain(self.libvirt_name)
         if domain is None:
             logging.debug("unable to destroy domain {name} since not found " \
-                          "in libvirt".format(name=self._name))
+                          "in libvirt".format(name=self.name))
             return # do nothing and leave
         if domain.isActive():
-            logging.warn("destroying domain {name}".format(name=self._name))
+            logging.warn("destroying domain {name}".format(name=self.name))
             domain.destroy()
         else:
-            logging.warn("undefining domain {name}".format(name=self._name))
+            logging.warn("undefining domain {name}".format(name=self.name))
             domain.undefine()
 
     def create(self,
-               bootdev='hd',
-               overwrite_disks = [],
-               recreate_networks = [],
-               overwrite = False):
+               bootdev='hd'):
 
-        """ Creates the Domain and all its dependancies in libvirt """
+        """ Creates the Domain """
 
-        for disk in self._disks:
-            storage_volume = disk.get_storage_volume()
-            if not storage_volume.created():
-                if storage_volume.get_name() in overwrite_disks:
-                    overwrite_storage_volume = True
-                else:
-                    overwrite_storage_volume = False
-                storage_volume.create(overwrite_storage_volume)
+        domain = self.ctl.find_domain(self.libvirt_name)
+        if domain:
+            if domain.isActive():
+                logging.info("destroying domain {name}" \
+                                 .format(name=self.libvirt_name))
+                domain.destroy()
+            else:
+                logging.info("undefining domain {name}" \
+                                 .format(name=self.libvirt_name))
+                domain.undefine()
 
-        for netif in self._netifs:
-            network = netif.get_network()
-            if not network.created():
-                if network.get_name() in recreate_networks:
-                    recreate_network = True
-                else:
-                    recreate_network = False
-                network.create(recreate_network)
-
-        if overwrite:
-            # delete all existing domain
-            for domain_name in self._conn.listDefinedDomains():
-                if domain_name == self._libvirt_name:
-                    domain = self._conn.lookupByName(domain_name)
-                    logging.info("undefining domain " + domain_name)
-                    domain.undefine()
-            for domain_id in self._conn.listDomainsID():
-                domain_name = self._conn.lookupByID(domain_id).name()
-                if domain_name == self._libvirt_name:
-                    domain = self._conn.lookupByName(domain_name)
-                    logging.info("destroying domain " + domain_name)
-                    domain.destroy()
-
-        self._bootdev = bootdev
+        self.bootdev = bootdev
 
         # create the domain
-        self._virtobj = self._conn.createXML(self.toxml(), 0)
-        logging.info("domain {domain}: created".format(domain=self._name))
+        self.ctl.create_domain(self.toxml())
+        logging.info("domain {domain}: created".format(domain=self.name))
 
     def notify_event(self, event):
 
         """ notify_event: used to notify a Domain about a DomainEvent """
 
         logging.debug("domain {domain}: notified with event {event}" \
-                          .format(domain = self._name, event = event))
+                          .format(domain=self.name, event=event))
         self._lock.acquire()        
         logging.debug("domain {domain}: lock acquired by notifyEvent" \
-                          .format(domain=self._name))
+                          .format(domain=self.name))
         self._events.append(event)
         self._lock.release()
         logging.debug("domain {domain}: lock released by notifyEvent" \
-                          .format(domain=self._name))
+                          .format(domain=self.name))
 
     def wait_for_event(self, event):
 
@@ -384,43 +215,31 @@ class Domain:
 
         logging.debug("domain {domain}: entering in wait_for_event loop" \
                       " waiting for event {event}" \
-                      .format(domain=self._name,
+                      .format(domain=self.name,
                               event=event))
 
         while True:
             self._lock.acquire()        
             #logging.debug("domain {domain}: lock acquired by waitForEvent" \
-            #                  .format(domain=self._name))
+            #                  .format(domain=self.name))
             for loop_event in self._events:
                 if loop_event == event:
                     logging.info("domain {domain}: waited event {event}" \
                                  " found!" \
-                                      .format(domain=self._name,
+                                      .format(domain=self.name,
                                               event=loop_event))
                     self._lock.release()
                     return
                 else:
                     logging.info("domain {domain}: removing needless event" \
                                  " {event}" \
-                                      .format(domain=self._name,
+                                      .format(domain=self.name,
                                               event=loop_event))
                     self._events.remove(loop_event)
             self._lock.release()
             #logging.debug("domain {domain}: lock released by waitForEvent" \
-            #                  .format(domain=self._name))
+            #                  .format(domain=self.name))
             time.sleep(1)
-
-    def snapshot(self, snapshot_name):
-
-        """ snapshot: Make a snapshot of a Domain """
-
-        domain_snapshot = DomainSnapshot(self._conn,
-                                         snapshot_name,
-                                         self._disks[0])
-        self._virtobj = self._conn.lookupByName(self._name)
-        self._virtobj.snapshotCreateXML(
-                          domain_snapshot.toxml(),
-                          libvirt.VIR_DOMAIN_SNAPSHOT_CREATE_DISK_ONLY)
 
     def __init_xml(self):
 
@@ -461,6 +280,16 @@ class Domain:
         #       <target dev='hdc' bus='ide' tray='open' />
         #       <readonly />
         #     </disk>
+        #     <disk type='file' device='cdrom'>
+        #       <source file='/home/user/boot.iso'/>
+        #       <target dev='hdc' bus='ide'/>
+        #       <readonly/>
+        #     </disk>
+        #     <filesystem type='mount' accessmode='passthrough'>
+        #       <source dir='/export/to/guest'/>
+        #       <target dir='/import/from/host'/>
+        #       <readonly/>
+        #     </filesystem>
         #     <interface type="network">
         #       <source network="network-name"/>
         #       <mac address="00:16:3e:75:40:d5"/>
@@ -468,6 +297,12 @@ class Domain:
         #     </interface>
         #     <graphics type='sdl'/>
         #     <graphics type='spice' />
+        #     <serial type='pty'>
+        #       <target port='0'/>
+        #     </serial>
+        #     <console type='pty'>
+        #       <target type='serial' port='0'/>
+        #     </console>
         #   </devices>
         # </domain>
 
@@ -478,20 +313,20 @@ class Domain:
 
         # name 
         element_name = self._doc.createElement("name")
-        node_name = self._doc.createTextNode(self._libvirt_name)
+        node_name = self._doc.createTextNode(self.libvirt_name)
         element_name.appendChild(node_name)
         element_domain.appendChild(element_name)
         
         # memory
         element_memory = self._doc.createElement("memory")
         element_memory.setAttribute("unit", "MiB")
-        node_memory = self._doc.createTextNode(str(self._memory))
+        node_memory = self._doc.createTextNode(str(self.memory))
         element_memory.appendChild(node_memory)
         element_domain.appendChild(element_memory)
         
         # vcpu
         element_vcpu = self._doc.createElement("vcpu")
-        node_vcpu = self._doc.createTextNode(str(self._vcpu))
+        node_vcpu = self._doc.createTextNode(str(self.vcpu))
         element_vcpu.appendChild(node_vcpu)
         element_domain.appendChild(element_vcpu)
 
@@ -516,9 +351,9 @@ class Domain:
         element_os.appendChild(element_type)
 
         # os/boot
-        if self._bootdev is not None:
+        if self.bootdev is not None:
             element_boot = self._doc.createElement("boot")
-            element_boot.setAttribute("dev", self._bootdev)
+            element_boot.setAttribute("dev", self.bootdev)
             element_os.appendChild(element_boot)
 
         # clock
@@ -564,7 +399,7 @@ class Domain:
 
         # hard disk
 
-        for disk in self._disks:
+        for disk in self.disks:
             # devices/disk
             element_disk = self._doc.createElement("disk")
             element_disk.setAttribute("type", "file")
@@ -574,13 +409,13 @@ class Domain:
             # devices/disk/source
             element_source = self._doc.createElement("source")
             element_source.setAttribute("file",
-                                        disk.get_storage_volume().getpath())
+                                        disk.storage_volume.getpath())
             element_disk.appendChild(element_source)
     
             # devices/disk/target
             element_target = self._doc.createElement("target")
-            element_target.setAttribute("dev", disk.get_device())
-            element_target.setAttribute("bus", "virtio")
+            element_target.setAttribute("dev", disk.device)
+            element_target.setAttribute("bus", disk.bus)
             element_disk.appendChild(element_target)
            
             # devices/disk/driver
@@ -593,30 +428,61 @@ class Domain:
 
         # devices/disk
         element_disk = self._doc.createElement("disk")
-        element_disk.setAttribute("type", "block")
+        if self.cdrom:
+            element_disk.setAttribute("type", "file")
+        else:
+            element_disk.setAttribute("type", "block")
         element_disk.setAttribute("device", "cdrom")
         element_devices.appendChild(element_disk)
 
-        # devices/disk/driver
-        element_driver = self._doc.createElement("driver")
-        element_driver.setAttribute("name", "qemu")
-        element_driver.setAttribute("type", "raw")
-        element_disk.appendChild(element_driver)
+        if self.cdrom:
+            # devices/disk/source
+            element_source = self._doc.createElement("source")
+            element_source.setAttribute("file", self.cdrom)
+            element_disk.appendChild(element_source)
+        else:
+            # devices/disk/driver
+            element_driver = self._doc.createElement("driver")
+            element_driver.setAttribute("name", "qemu")
+            element_driver.setAttribute("type", "raw")
+            element_disk.appendChild(element_driver)
 
         # devices/disk/target
         element_target = self._doc.createElement("target")
         element_target.setAttribute("dev", "hdc")
         element_target.setAttribute("bus", "ide")
-        element_target.setAttribute("tray", "open")
+        if not self.cdrom:
+            element_target.setAttribute("tray", "open")
         element_disk.appendChild(element_target)
 
         # devices/disk/readonly
         element_readonly = self._doc.createElement("readonly")
         element_disk.appendChild(element_readonly)
 
+        # virtfs
+
+        for fs in self.virtfs:
+
+            # devices/filesystem
+            element_fs = self._doc.createElement("filesystem")
+            element_fs.setAttribute("type", "mount")
+            #element_fs.setAttribute("accessmode", "passthrough")
+            element_fs.setAttribute("accessmode", "mapped")
+            element_devices.appendChild(element_fs)
+
+            # devices/filesystem/source
+            element_source = self._doc.createElement("source")
+            element_source.setAttribute("dir", fs.source)
+            element_fs.appendChild(element_source)
+
+            # devices/filesystem/target
+            element_target = self._doc.createElement("target")
+            element_target.setAttribute("dir", fs.target)
+            element_fs.appendChild(element_target)
+
         # netif 
 
-        for netif in self._netifs:
+        for netif in self.netifs:
 
             # devices/interface
             element_interface = self._doc.createElement("interface")
@@ -626,7 +492,7 @@ class Domain:
             # devices/interface/source
             element_source = self._doc.createElement("source")
             element_source.setAttribute("network",
-                                        netif.get_network().get_libvirt_name())
+                                        netif.network.libvirt_name)
             element_interface.appendChild(element_source)
 
             # devices/interface/target
@@ -636,7 +502,7 @@ class Domain:
 
             # devices/interface/mac
             element_mac = self._doc.createElement("mac")
-            element_mac.setAttribute("address", netif.get_mac())
+            element_mac.setAttribute("address", netif.mac)
             element_interface.appendChild(element_mac)
 
             # devices/interface/model
@@ -645,11 +511,33 @@ class Domain:
             element_interface.appendChild(element_model)
 
         # devices/graphics
-        if self._graphics:
+        if self.graphics:
             element_graphics = self._doc.createElement("graphics")
-            element_graphics.setAttribute("type", self._graphics)
+            element_graphics.setAttribute("type", self.graphics)
             # if spice is used, enable port auto-allocation
-            if self._graphics == "spice":
+            if self.graphics == "spice":
                 element_graphics.setAttribute("autoport", "yes")
             element_devices.appendChild(element_graphics)
 
+        # serial console
+
+        # devices/serial
+        element_serial = self._doc.createElement("serial")
+        element_serial.setAttribute("type", "pty")
+        element_devices.appendChild(element_serial)
+
+        # devices/serial/target
+        element_target = self._doc.createElement("target")
+        element_target.setAttribute("port", "0")
+        element_serial.appendChild(element_target)
+
+        # devices/console
+        element_console = self._doc.createElement("console")
+        element_console.setAttribute("type", "pty")
+        element_devices.appendChild(element_console)
+
+        # devices/console/target
+        element_target = self._doc.createElement("target")
+        element_target.setAttribute("type", "serial")
+        element_target.setAttribute("port", "0")
+        element_console.appendChild(element_target)

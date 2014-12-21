@@ -21,12 +21,12 @@
 
 """ Cloubed """
 
-import libvirt
 import sys
 import os
 import logging
 import thread
 
+from VirtController import VirtController
 from StoragePool import StoragePool
 from StorageVolume import StorageVolume
 from Domain import Domain
@@ -67,14 +67,14 @@ class Cloubed():
 
     __metaclass__ = Singleton
 
-    def __init__(self):
+    def __init__(self, conf_loader=None):
 
         #
         # connection to the hypervisor
         #
         
-        self._conn = libvirt.open("qemu:///system")
-        if self._conn == None:
+        self.ctl = VirtController()
+        if self.ctl == None:
             logging.error("Failed to open connection to the hypervisor")
             sys.exit(1)
 
@@ -87,49 +87,52 @@ class Cloubed():
         #
         # parse configuration file
         #
-        configuration_filename = os.path.join(os.getcwd(), "cloubed.yaml")
-        self._conf_loader = ConfigurationLoader(configuration_filename)
+        if conf_loader:
+            self._conf_loader = conf_loader
+        else:
+            configuration_filename = os.path.join(os.getcwd(), "cloubed.yaml")
+            self._conf_loader = ConfigurationLoader(configuration_filename)
         self._conf = Configuration(self._conf_loader)
-        self._name = self._conf.get_testbed_name()
+        self._name = self._conf.testbed
     
         #
         # initialize storage pools
         #    
         self._storage_pools = []
-        for storage_pool_conf in self._conf.get_storage_pools_list():
+        for storage_pool_conf in self._conf.storage_pools:
             logging.info("initializing storage pool {name}" \
-                             .format(name=storage_pool_conf.get_name()))
-            self._storage_pools.append(StoragePool(self._conn,
+                             .format(name=storage_pool_conf.name))
+            self._storage_pools.append(StoragePool(self,
                                                    storage_pool_conf))
     
         #
         # initialize storage volumes
         #
         self._storage_volumes = []
-        for storage_volume_conf in self._conf.get_storage_volumes_list():
+        for storage_volume_conf in self._conf.storage_volumes:
             logging.info("initializing storage volume {name}" \
-                             .format(name=storage_volume_conf.get_name()))
-            self._storage_volumes.append(StorageVolume(self._conn,
+                             .format(name=storage_volume_conf.name))
+            self._storage_volumes.append(StorageVolume(self,
                                                        storage_volume_conf))
     
         #
         # initialize networks
         #
         self._networks = []
-        for network_conf in self._conf.get_networks_list():
+        for network_conf in self._conf.networks:
             logging.info("initializing network {name}" \
-                             .format(name=network_conf.get_name()))
-            self._networks.append(Network(self._conn,
+                             .format(name=network_conf.name))
+            self._networks.append(Network(self,
                                           network_conf))
 
         #
         # initialize domain and templates
         #
         self._domains = []
-        for domain_conf in self._conf.get_domains_list():
+        for domain_conf in self._conf.domains:
             logging.info("initializing domain {name}" \
-                             .format(name=domain_conf.get_name()))
-            self._domains.append(Domain(self._conn,
+                             .format(name=domain_conf.name))
+            self._domains.append(Domain(self,
                                         domain_conf))
 
         #
@@ -142,39 +145,62 @@ class Cloubed():
 
         """ Returns the list of storage pools names """
 
-        return [ storage_pool.get_name() \
+        return [ storage_pool.name \
                  for storage_pool in self._storage_pools ]
 
     def storage_volumes(self):
 
         """ Returns the list of storage volumes names """
 
-        return [ storage_volume.get_name() \
+        return [ storage_volume.name \
                  for storage_volume in self._storage_volumes ]
 
     def networks(self):
 
         """ Returns the list of networks names """
 
-        return [ network.get_name() for network in self._networks ]
+        return [ network.name for network in self._networks ]
 
     def domains(self):
 
         """ Returns the list of domains names """
 
-        return [ domain.get_name() for domain in self._domains ]
+        return [ domain.name for domain in self._domains ]
 
     def get_domain_by_name(self, name):
 
-        """ get_domain_by_name: """
+        """Returns the Domain object of the testbed with the name in parameter.
+
+           :param string name: the name of the domain to find
+           :exceptions CloubedException:
+               * the domain could not be found in the testbed
+        """
 
         for domain in self._domains:
-            if domain.get_name() == name:
+            if domain.name == name:
                 return domain
 
         # domain not found
-        raise CloubedException("domain {domain} not found in configuration"
+        raise CloubedException("domain {domain} not found in configuration" \
                                    .format(domain=name))
+
+    def get_domain_by_libvirt_name(self, libvirt_name):
+
+        """Returns the Domain object of the testbed with the libvirt name in
+           parameter.
+
+           :param string libvirt_name: the name in libvirt of the domain to find
+           :exceptions CloubedException:
+               * the domain could not be found in the testbed
+        """
+
+        for domain in self._domains:
+            if domain.libvirt_name == libvirt_name:
+                return domain
+
+        # domain not found
+        raise CloubedException("domain {domain} not found in configuration" \
+                                   .format(domain=libvirt_name))
 
     def get_network_by_name(self, name):
 
@@ -184,7 +210,7 @@ class Cloubed():
         """
 
         for network in self._networks:
-            if network.get_name() == name:
+            if network.name == name:
                 return network
 
         # network not found
@@ -199,7 +225,7 @@ class Cloubed():
         """
 
         for storage_volume in self._storage_volumes:
-            if storage_volume.get_name() == name:
+            if storage_volume.name == name:
                 return storage_volume
 
         # storage volume not found
@@ -214,7 +240,7 @@ class Cloubed():
         """
 
         for storage_pool in self._storage_pools:
-            if storage_pool.get_name() == name:
+            if storage_pool.name == name:
                 return storage_pool
 
         # storage pool not found
@@ -223,7 +249,18 @@ class Cloubed():
 
     def get_templates_dict(self, domain_name):
 
-        """ get_templates_dict: """
+        """Returns the dict with all variables that could be used in a template
+           for a domain.
+
+           :param string domain_name: the name of the domain
+           :exceptions CloubedException:
+               * the domain could not be found in the testbed
+        """
+
+        if domain_name not in self.domains():
+            raise CloubedException("domain {domain} not found in " \
+                                   "configuration" \
+                                       .format(domain=domain_name))
 
         templates_dict = self._conf.get_templates_dict(domain_name)
         return templates_dict
@@ -243,7 +280,7 @@ class Cloubed():
         """ Launch event manager thread unless already done """
 
         if self._event_manager is None:
-            self._event_manager = EventManager()
+            self._event_manager = EventManager(self)
 
     def gen_file(self, domain_name, template_name):
 
@@ -255,71 +292,111 @@ class Cloubed():
         domain_template = domain.get_template_by_name(template_name)
         domain_template.render(templates_dict)
 
-    def boot_vm(self, domain_name, bootdev = "hd", overwrite_disks = [], recreate_networks = []):
+    def boot_vm(self, domain_name,
+                bootdev="hd",
+                overwrite_disks=[],
+                recreate_networks=[]):
 
         """ boot_vm: """
 
         domain = self.get_domain_by_name(domain_name)
-        try:
-            if type(overwrite_disks) == bool:
-                if overwrite_disks == True:
-                    overwrite_disks = domain.get_disks()
-                else:
-                    overwrite_disks = []
+
+        #
+        # manage disks
+        #
+
+        # build list of storage volumes to overwrite
+
+        if type(overwrite_disks) == bool:
+            if overwrite_disks == True:
+                overwrite_disks = domain.get_storage_volumes_names()
             else:
-                # type(overwrite_disks) is list
-                # remove non-existing disks and log warning
-                domain_disks = domain.get_disks()
-                for disk in set(overwrite_disks) - set(domain_disks):
-                    logging.warning("domain {domain} does not have disk " \
-                                    "{disk}, removing it of disks to " \
-                                    "overwrite" \
-                                        .format(domain=domain.get_name(),
-                                                disk=disk))
-                    overwrite_disks.remove(disk)
+                overwrite_disks = []
+        else:
+            # type(overwrite_disks) is list
+            # remove non-existing disks and log warning
+            domain_disks = domain.get_storage_volumes_names()
+            for disk in set(overwrite_disks) - set(domain_disks):
+                logging.warning("domain {domain} does not have disk " \
+                                "{disk}, removing it of disks to " \
+                                "overwrite" \
+                                    .format(domain=domain.name,
+                                            disk=disk))
+                overwrite_disks.remove(disk)
 
-            logging.debug("disks to overwrite for domain {domain}: {disks}" \
-                              .format(domain=domain.get_name(),
-                                      disks=str(overwrite_disks)))
+        logging.debug("disks to overwrite for domain {domain}: {disks}" \
+                          .format(domain=domain.name,
+                                  disks=str(overwrite_disks)))
 
-            if type(recreate_networks) == bool:
-                if recreate_networks == True:
-                    recreate_networks = domain.get_networks()
-                else:
-                    recreate_networks = []
+        for storage_volume in domain.get_storage_volumes():
+            #if not storage_volume.created(): #useless?
+            if storage_volume.name in overwrite_disks:
+                overwrite_storage_volume = True
             else:
-                # type(recreate_networks) is list
-                # remove non-existing networks and log warning
-                domain_networks = domain.get_networks()
-                for network in set(recreate_networks) - set(domain_networks):
-                    logging.warning("domain {domain} is not connected to " \
-                                    "network {network}, removing it of " \
-                                    "networks to recreate" \
-                                        .format(domain=domain.get_name(),
-                                                network=network))
-                    recreate_networks.remove(network)
+                overwrite_storage_volume = False
+            storage_volume.storage_pool.create()
+            storage_volume.create(overwrite_storage_volume)
 
-            logging.debug("networks to recreate for domain {domain}: " \
-                          "{networks}" \
-                              .format(domain=domain.get_name(),
-                                      networks=str(recreate_networks)))
 
-            domain.create(bootdev, overwrite_disks, recreate_networks, True)
+        #
+        # manage networks
+        #
 
-        except libvirt.libvirtError as err:
-            logging.error("libvirt error: {error}".format(error=err))
-            raise CloubedException(err)
+        # build list of networks to recreate
+
+        if type(recreate_networks) == bool:
+            if recreate_networks == True:
+                recreate_networks = domain.get_networks_names()
+            else:
+                recreate_networks = []
+        else:
+            # type(recreate_networks) is list
+            # remove non-existing networks and log warning
+            domain_networks = domain.get_networks_names()
+            for network in set(recreate_networks) - set(domain_networks):
+                logging.warning("domain {domain} is not connected to " \
+                                "network {network}, removing it of " \
+                                "networks to recreate" \
+                                    .format(domain=domain.name,
+                                            network=network))
+                recreate_networks.remove(network)
+
+        logging.debug("networks to recreate for domain {domain}: " \
+                      "{networks}" \
+                          .format(domain=domain.name,
+                                  networks=str(recreate_networks)))
+
+
+        for network in domain.get_networks():
+            #if not network.created(): #useless?
+            if network.name in recreate_networks:
+                recreate_network = True
+            else:
+                recreate_network = False
+            network.create(recreate_network)
+
+        #
+        # manage domain
+        #
+
+        domain.create(bootdev)
+
+        if domain.graphics in ["spice", "vnc"]:
+            infos = domain.get_infos()
+            logging.info("{type} console of domain {domain} available on port " \
+                         "{port}".format(type=infos['console'],
+                                         domain=domain.name,
+                                         port=infos['port']))
 
     def create_network(self, network_name, recreate):
 
         """ Create network in Cloubed """
         network = self.get_network_by_name(network_name)
-        try:
-            network.create(recreate)
-        except libvirt.libvirtError as err:
-            raise CloubedException(err)
+        network.create(recreate)
 
-    def wait_event(self, domain_name, event_type, event_detail, enable_http = True):
+    def wait_event(self, domain_name,
+                   event_type, event_detail,
+                   enable_http=True):
 
         """ wait_event: """
 
@@ -332,9 +409,9 @@ class Cloubed():
         if enable_http:
             # build the list of host ip addresses on all networks connected to
             # the domain
-            list_ip_hosts = [ dom_netif.get_network().get_ip_host() \
-                              for dom_netif in domain.get_netifs() \
-                              if dom_netif.get_network().get_ip_host() \
+            list_ip_hosts = [ dom_netif.network.ip_host \
+                              for dom_netif in domain.netifs \
+                              if dom_netif.network.ip_host \
                                  is not None ]
             if len(list_ip_hosts) > 0:
                 # arbitrary take the first ip address
@@ -362,28 +439,30 @@ class Cloubed():
 
         infos['storagepools'] = {}
         for storage_pool in self._storage_pools:
-            name = storage_pool.get_name()
+            name = storage_pool.name
             infos['storagepools'][name] = storage_pool.get_infos()
 
         infos['storagevolumes'] = {}
         for storage_volume in self._storage_volumes:
-            name = storage_volume.get_name()
+            name = storage_volume.name
             infos['storagevolumes'][name] = storage_volume.get_infos()
 
         infos['networks'] = {}
         for network in self._networks:
-            name = network.get_name()
+            name = network.name
             infos['networks'][name] = network.get_infos()
 
         infos['domains'] = {}
         for domain in self._domains:
-            name = domain.get_name()
+            name = domain.name
             infos['domains'][name] = domain.get_infos()
 
         return infos
 
     def cleanup(self):
-
+        """Basically destroy everything. After calling this method, the testbed
+           comes back at its initial state.
+        """
         for domain in self._domains:
             domain.destroy()
         for network in self._networks:
@@ -392,9 +471,25 @@ class Cloubed():
             storage_volume.destroy()
         for storage_pool in self._storage_pools:
             storage_pool.destroy()
+        for domain in self._domains:
+            for template in domain.templates:
+                template.delete()
 
     def xml(self, resource_type, resource_name):
+        """Returns the xml representation generated by Cloubed for a resource
+           based on the content of the yaml file. This is the actual XML that
+           would have been given by Cloubed to Libvirt for creating this
+           resource.
 
+           :param string resource_type: the type of the resource (eg. domain,
+               network, etc)
+           :param string resource_name: the name of the resource in the yaml
+               file
+           :exceptions CloubedException:
+               * the type of resource is not valid
+           :exceptions CloubedConfigurationException:
+               * the resource name could not be found in yaml file
+        """
         if resource_type == "domain":
             domain = self.get_domain_by_name(resource_name)
             return domain.xml()
@@ -412,7 +507,9 @@ class Cloubed():
                                    "{type}".format(type=resource_type))
 
     def clean_exit(self):
-
+        """Cleanly stop the internal HTTP server and the event manager thread
+           if they have been launched previously.
+        """
         logging.debug("clean exit")
         if self._http_server.launched():
             self._http_server.terminate()

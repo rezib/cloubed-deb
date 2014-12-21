@@ -33,7 +33,7 @@ class ConfigurationStoragePool(ConfigurationItem):
 
         super(ConfigurationStoragePool, self).__init__(storage_pool_item)
 
-        self._path = None
+        self.path = None
         self.__parse_path(storage_pool_item)
 
     def __parse_path(self, conf):
@@ -45,20 +45,20 @@ class ConfigurationStoragePool(ConfigurationItem):
        if not conf.has_key('path'):
            raise CloubedConfigurationException(
                "path parameter is missing on storage pool {name}" \
-                   .format(name=self._name))
+                   .format(name=self.name))
 
        path = conf['path']
 
        if type(path) is not str:
            raise CloubedConfigurationException(
                "format of the path parameter on storage pool {name} is not " \
-               "valid".format(name=self._name))
+               "valid".format(name=self.name))
 
-       self._path = conf['path']
+       self.path = conf['path']
 
        # handle relative path
-       if self._path[0] != '/':
-            self._path = os.path.join(os.getcwd(), self._path)
+       if self.path[0] != '/':
+            self.path = os.path.join(os.getcwd(), self.path)
 
     def _get_type(self):
 
@@ -66,17 +66,11 @@ class ConfigurationStoragePool(ConfigurationItem):
 
         return u"storage pool"
 
-    def get_path(self):
-
-        """ Returns the path of the Storage Pool """
-
-        return self._path
-
     def get_templates_dict(self):
 
         """ Returns a dictionary with all parameters for the Storage Pool """
 
-        clean_name = ConfigurationItem.clean_string_for_template(self._name)
+        clean_name = ConfigurationItem.clean_string_for_template(self.name)
 
         return { "storagepool.{name}.path" \
-                     .format(name=clean_name) : str(self._path) }
+                     .format(name=clean_name) : str(self.path) }
