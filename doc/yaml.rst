@@ -78,13 +78,39 @@ volume are:
 * ``size``: an integer representing the total size of the storage volume in
   gigabytes.
 * ``format`` *(optional)*: the format of the storage volume file. It must be one
-   of the formats supported by QEMU (see the the output of command
-   ``qemu-img --help`` for the complete list). The default value is ``qcow2``
-   and it should be appriopriate for most usages.
+  of the formats supported by QEMU (see the output of command
+  ``qemu-img --help`` for the complete list). The default value is ``qcow2`` and
+  it should be appropriate for most use cases.
+* ``backing`` *(optional)*: the name of another storage volume to use as
+  *backing volume* for this volume. This referenced storage volume must be
+  properly defined.
 
-In the given minimal example, one storage volume is defined. Its name is
-``bar-vol``, its size is 70GB and it will be stored in ``foo-pool`` storage
-pool. Its format is the default ``qcow2``.
+
+Examples
+^^^^^^^^
+
+*Example 1*::
+
+      - name: bar-vol
+        storagepool: foo-pool
+        size: 70
+
+There is one storage volume named ``bar-vol`` of 70GB in storage pool
+``foo-pool``. Its format is the default ``qcow2``.
+
+*Example 2*::
+
+      - name: bar-base
+        storagepool: foo-pool
+        size: 70
+      - name: bar-volume
+        storagepool: foo-pool
+        size: 70
+        backing: bar-base
+
+There are two storage volumes of 70GB named ``bar-base`` and ``bar-volume`` in
+storage pool ``foo-pool``. The storage volume ``bar-volume`` uses ``bar-base``
+as *backing volume*.
 
 Networks
 --------
@@ -147,6 +173,12 @@ These two parameters are globally optionals but they cannot be defined
 separately. They must be either both defined or both undefined within the
 ``dhcp`` sub-section.
 
+When DHCP service is properly enable, a domain name can be defined for the
+network. It is then used by DHCP and DNS services:
+
+* ``domain`` *(optional)*: the name of the DNS domain of the network (eg.
+  ``exemple.net``).
+
 Finally, when DHCP service is properly enable, the PXE service can also be
 defined. This service is controled within a dedicated ``pxe`` sub-section. When
 present, this sub-section must contain the following parameters:
@@ -197,8 +229,8 @@ bridge ``br0``. This bridge must be already existing on the node.
     networks:
       - name: foo4-net
         forward: nat
+        domain: foo.net
         ip_host: 10.1.0.1
-
         netmask: 255.255.255.0
         dhcp:
           start: 10.1.0.100
@@ -235,6 +267,9 @@ domain. Each network interface have the following parameters:
   network must be defined previously in the dedicated section.
 * ``ip`` *(optional)*: the IPv4 address that will be statically assigned to the
   interface (if the DHCP service is enable on the corresponding network).
+* ``mac`` *(optional)*: the MAC address that will be set on the network
+  interface. If not set, Cloubed will automatically generate a persistent MAC
+  address based on the domain and network names.
 
 The sub-section ``disks`` must contain a list of storage volumes for the
 domain. Each storage volume must have the following parameters:
@@ -242,12 +277,36 @@ domain. Each storage volume must have the following parameters:
 * ``device``: a valid string, the name of the device (not used yet).
 * ``storage_volume``: the name of the storage volume. This storage volume must
   be defined previously in the dedicated section.
+* ``bus`` *(optional)*: the type of bus through which the disk will be visible
+  for the guest OS inside the domain. Valid values are ``virtio``, ``scsi`` and
+  ``ide``. Default is ``virtio`` and is recommended for performance reasons.
+  Alternative values ``scsi`` and ``ide`` could be useful for guests OS that do
+  not support ``virtio`` or for particular setup (ex: multipath, etc).
 
-There is also an optional parameter for the domain:
+The optional sub-section ``virtfs``, if declared, must contain a list of
+directory on the host to export to the domain. With this feature, the domain can
+easily access files on the host without complicated setup. This feature relies
+on the 9p protocol and Qemu virtfs technology. Each declared ``virtfs`` must
+have the following parameters:
 
-* ``graphics`` *(optional)*: either ``spice`` or ``vnc``. If defined, the given
-  protocol will be enable for remote access to the graphical console of the
-  domain.
+* ``source``: path to a directory to export to the domain. This directory must
+  exist on the host. The path can be either an absolute or relative to the
+  directory where the YAML file is located. If the value starts with ``/``, an
+  absolute path is presumed. If the directory does not exist on the system,
+  Cloubed will raise an error when booting the domain.
+* ``target`` *(optional)*: the name of the exported 9p share inside the domain.
+  If not set, the default value is the absolute path of the ``source``.
+
+There are also optional parameters for the domain:
+
+* ``graphics`` *(optional)*: either ``spice`` or ``vnc``. The protocol to enable
+  for remote access to the graphical console of the domain. If not specified,
+  the default is ``spice`` if the installed version of libvirt supports it.
+  Otherwise, it falls back to ``vnc``.
+* ``cdrom`` *(optional)*: path to an existing ISO file on the system to use as
+  a bootable cdrom. The path can be either absolute or relative to the directory
+  where the YAML file is located. If the value starts with ``/``, an absolute
+  path is expected.
 
 Optionally, the ``templates`` sub-section can also be defined to generate files
 based on templates. If defined, this sub-section can contain:

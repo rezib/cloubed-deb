@@ -22,17 +22,20 @@
 from setuptools import setup
 
 setup(name='cloubed',
-      version='0.3',
+      version='0.4',
       description='Utility and library to easily setup virtual testbeds composed of several KVM virtual machines through libvirt',
       author='Rémi Palancher',
       author_email='remi@rezib.org',
-      package_dir = {'cloubed': 'lib'},
-      packages = ['cloubed',
-                  'cloubed.cli',
-                  'cloubed.conf' ],
+      package_dir={'cloubed': 'lib'},
+      packages=['cloubed',
+                'cloubed.cli',
+                'cloubed.conf'],
       scripts=['scripts/cloubed'],
-      install_requires = ['pyyaml',
-                          'libvirt-python'],
-      license="LGPLv3",
+      install_requires=['argparse',
+                        'pyyaml',
+                        'libvirt-python',
+                        'netaddr'],
+      license='LGPLv3',
+      url='http://cloubed.org/',
       platforms=['GNU/Linux']
      )

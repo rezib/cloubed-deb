@@ -22,7 +22,9 @@
 """ ConfigurationDomain class """
 
 import re
+import os
 from ConfigurationItem import ConfigurationItem
+from ..VirtController import VirtController
 from ..CloubedException import CloubedConfigurationException
 
 class ConfigurationDomain(ConfigurationItem):
@@ -33,20 +35,26 @@ class ConfigurationDomain(ConfigurationItem):
 
         super(ConfigurationDomain, self).__init__(domain_item)
 
-        self._cpu = None
+        self.cpu = None
         self.__parse_cpu(domain_item)
-        self._memory = None
+        self.memory = None
         self.__parse_memory(domain_item)
-        self._graphics = None
+        self.graphics = None
         self.__parse_graphics(domain_item)
 
-        self._netifs = []
+        self.netifs = []
         self.__parse_netifs(domain_item)
 
-        self._disks = {}
+        self.disks = []
         self.__parse_disks(domain_item)
 
-        self._template_files = []
+        self.cdrom = None
+        self.__parse_cdrom(domain_item)
+
+        self.virtfs = []
+        self.__parse_virtfs(domain_item)
+
+        self.template_files = []
         self._template_vars = {}
         self.__parse_templates(domain_item)
 
@@ -59,16 +67,16 @@ class ConfigurationDomain(ConfigurationItem):
         if not conf.has_key('cpu'):
             raise CloubedConfigurationException(
                        "cpu parameter of domain {domain} is missing" \
-                           .format(domain=self._name))
+                           .format(domain=self.name))
 
         cpu = conf['cpu']
 
         if type(cpu) is not int:
             raise CloubedConfigurationException(
                        "format of cpu parameter of domain {domain} is not " \
-                       "valid".format(domain=self._name))
+                       "valid".format(domain=self.name))
 
-        self._cpu = cpu
+        self.cpu = cpu
 
     def __parse_memory(self, conf):
         """
@@ -79,7 +87,7 @@ class ConfigurationDomain(ConfigurationItem):
         if not conf.has_key('memory'):
             raise CloubedConfigurationException(
                        "memory parameter of domain {domain} is missing" \
-                           .format(domain=self._name))
+                           .format(domain=self.name))
 
         multiplier = 1024 # default unit in YAML is GiB
                           # but Cloubed internally stores memory size in MiB
@@ -99,7 +107,7 @@ class ConfigurationDomain(ConfigurationItem):
                           "memory size '{memory}' of domain {domain} is not " \
                           "valid" \
                               .format(memory=memory,
-                                      domain=self._name))
+                                      domain=self.name))
 
             qty = int(match.group(1))
             unit = match.group(2)
@@ -112,15 +120,15 @@ class ConfigurationDomain(ConfigurationItem):
                 raise CloubedConfigurationException("unknown unit for memory" \
                           " '{memory}' of domain {domain}" \
                               .format(memory=memory,
-                                      domain=self._name))
+                                      domain=self.name))
         else:
             raise CloubedConfigurationException(
                        "format of memory parameter of domain {domain} is not " \
                        "valid" \
                            .format(memory=memory,
-                                   domain=self._name))
+                                   domain=self.name))
 
-        self._memory = multiplier * qty
+        self.memory = multiplier * qty
 
     def __parse_graphics(self, conf):
         """
@@ -136,7 +144,7 @@ class ConfigurationDomain(ConfigurationItem):
                 raise CloubedConfigurationException(
                           "format of graphics parameter of domain {domain} " \
                           "is not valid" \
-                              .format(domain=self._name))
+                              .format(domain=self.name))
 
             valid_graphics = ["sdl", "vnc", "rdp", "spice"]
 
@@ -145,13 +153,16 @@ class ConfigurationDomain(ConfigurationItem):
                           "value {graphics} of graphics parameter of domain " \
                           "{domain} is not valid" \
                               .format(graphics=graphics,
-                                      domain=self._name))
+                                      domain=self.name))
 
-            self._graphics = graphics
+            self.graphics = graphics
 
         else:
-            # default is spice
-            self._graphics = "spice"
+            # default is spice if controller has support
+            if VirtController.supports_spice():
+                self.graphics = "spice"
+            else:
+                self.graphics = "vnc"
 
     def __parse_netifs(self, conf):
         """
@@ -163,14 +174,14 @@ class ConfigurationDomain(ConfigurationItem):
         if not conf.has_key('netifs'):
             raise CloubedConfigurationException(
                       "netifs section of domain {domain} is missing" \
-                          .format(domain=self._name))
+                          .format(domain=self.name))
 
         netifs = conf['netifs']
 
         if type(netifs) is not list:
             raise CloubedConfigurationException(
                       "format of netifs section of domain {domain} is not " \
-                      "valid".format(domain=self._name))
+                      "valid".format(domain=self.name))
 
         netif_id = 0
 
@@ -181,7 +192,7 @@ class ConfigurationDomain(ConfigurationItem):
                           "format of netif {netif_id} of domain {domain} is " \
                           "not valid" \
                               .format(netif_id=netif_id,
-                                      domain=self._name))
+                                      domain=self.name))
 
 
             if not netif.has_key("network"):
@@ -189,14 +200,14 @@ class ConfigurationDomain(ConfigurationItem):
                           "network of netif {netif_id} of domain {domain} is " \
                           "missing" \
                               .format(netif_id=netif_id,
-                                      domain=self._name))
+                                      domain=self.name))
 
             if type(netif["network"]) is not str:
                 raise CloubedConfigurationException(
                           "format of network of netif {netif_id} of domain "\
                           "{domain} is not valid" \
                               .format(netif_id=netif_id,
-                                      domain=self._name))
+                                      domain=self.name))
 
             if netif.has_key("ip") and \
                type(netif["ip"]) is not str:
@@ -204,9 +215,28 @@ class ConfigurationDomain(ConfigurationItem):
                           "format of ip of netif {netif_id} of domain "\
                           "{domain} is not valid" \
                               .format(netif_id=netif_id,
-                                      domain=self._name))
+                                      domain=self.name))
 
-            self._netifs.append(netif)
+            if netif.has_key("mac"):
+
+                if type(netif["mac"]) is not str:
+                    raise CloubedConfigurationException(
+                              "format of mac of netif {netif_id} of domain "\
+                              "{domain} is not valid" \
+                                  .format(netif_id=netif_id,
+                                          domain=self.name))
+
+                # check mac against this regexp
+                mac_regexp = r"^([0-9a-fA-F]{2}:){5}([0-9a-fA-F]{2})$"
+
+                if re.match(mac_regexp, netif["mac"]) is None:
+                    raise CloubedConfigurationException(
+                              "value of mac parameter of netif {netif_id} of " \
+                              "domain {domain} is not a valid mac address" \
+                                  .format(netif_id=netif_id,
+                                          domain=self.name))
+
+            self.netifs.append(netif)
 
             netif_id += 1
 
@@ -217,17 +247,19 @@ class ConfigurationDomain(ConfigurationItem):
             found.
         """
 
+        self.disks = []
+
         if not conf.has_key('disks'):
             raise CloubedConfigurationException(
                       "disks section of domain {domain} is missing" \
-                          .format(domain=self._name))
+                          .format(domain=self.name))
 
         disks = conf['disks']
 
         if type(disks) is not list:
             raise CloubedConfigurationException(
                       "format of disks section of domain {domain} is not " \
-                      "valid".format(domain=self._name))
+                      "valid".format(domain=self.name))
 
         disk_id = 0
 
@@ -238,7 +270,7 @@ class ConfigurationDomain(ConfigurationItem):
                           "format of disk {disk_id} of domain {domain} is " \
                           "not valid" \
                               .format(disk_id=disk_id,
-                                      domain=self._name))
+                                      domain=self.name))
 
 
             if not disk.has_key("device"):
@@ -246,14 +278,14 @@ class ConfigurationDomain(ConfigurationItem):
                           "device of disk {disk_id} of domain {domain} " \
                           "is missing" \
                               .format(disk_id=disk_id,
-                                      domain=self._name))
+                                      domain=self.name))
 
             if not disk.has_key("storage_volume"):
                 raise CloubedConfigurationException(
                           "storage volume of disk {disk_id} of domain " \
                           "{domain} is missing" \
                               .format(disk_id=disk_id,
-                                      domain=self._name))
+                                      domain=self.name))
 
 
             if type(disk["device"]) is not str:
@@ -261,18 +293,127 @@ class ConfigurationDomain(ConfigurationItem):
                           "format of device of disk {disk_id} of domain " \
                           "{domain} is not valid" \
                               .format(disk_id=disk_id,
-                                      domain=self._name))
+                                      domain=self.name))
 
             if type(disk["storage_volume"]) is not str:
                 raise CloubedConfigurationException(
                           "format of storage volume of disk {disk_id} of " \
                           "domain {domain} is not valid" \
                               .format(disk_id=disk_id,
-                                      domain=self._name))
+                                      domain=self.name))
 
-            self._disks[disk["device"]] = disk["storage_volume"]
+            if disk.has_key("bus"):
+                bus = disk["bus"]
+                if type(bus) is not str:
+                    raise CloubedConfigurationException(
+                              "format of bus of disk {disk_id} of domain " \
+                              "{domain} is not valid" \
+                                  .format(disk_id=disk_id,
+                                          domain=self.name))
+
+                valid_buses = ["virtio", "scsi", "ide"]
+
+                if bus not in valid_buses:
+                    raise CloubedConfigurationException(
+                              "value {bus} of bus of disk {disk_id} of " \
+                              "domain {domain} is not valid" \
+                                  .format(bus=bus,
+                                          disk_id=disk_id,
+                                          domain=self.name))
+
+            else:
+
+                # default value
+                disk["bus"] = "virtio"
+
+            self.disks.append(disk)
 
             disk_id += 1
+
+    def __parse_cdrom(self, conf):
+        """
+            Parses the cdrom parameter over the conf dictionary given in
+            parameter and raises appropriate exception if a problem is found.
+        """
+
+        self.cdrom = None
+
+        if conf.has_key('cdrom'):
+
+            cdrom = conf['cdrom']
+
+            if type(cdrom) is not str:
+                raise CloubedConfigurationException(
+                          "format of cdrom parameter of domain {domain} " \
+                          "is not valid" \
+                              .format(domain=self.name))
+
+            # handle relative path
+            if cdrom[0] != '/':
+                cdrom = os.path.join(os.getcwd(), cdrom)
+
+            self.cdrom = cdrom
+
+    def __parse_virtfs(self, conf):
+        """
+            Parses the virtfs section of parameters over the conf dictionary
+            given in parameter and raises appropriate exception if a problem is
+            found.
+        """
+
+        self.virtfs = []
+
+        if conf.has_key('virtfs'):
+
+            virtfs = conf['virtfs']
+
+            if type(virtfs) is not list:
+                raise CloubedConfigurationException(
+                          "format of virtfs section of domain {domain} is " \
+                          "not valid".format(domain=self.name))
+
+            id = 0
+
+            for fs in virtfs:
+
+                if type(fs) is not dict:
+                    raise CloubedConfigurationException(
+                              "format of virtfs {id} of domain {domain} is " \
+                              "not valid" \
+                                  .format(id=id, domain=self.name))
+
+                if not fs.has_key("source"):
+                    raise CloubedConfigurationException(
+                              "source of virtfs {id} of domain {domain} is " \
+                              "missing" \
+                                  .format(id=id, domain=self.name))
+
+                if type(fs["source"]) is not str:
+                    raise CloubedConfigurationException(
+                              "format of source of virtfs {id} of domain " \
+                              "{domain} is not valid" \
+                                  .format(id=id, domain=self.name))
+
+                source = fs["source"]
+
+                # handle relative source path
+                if source[0] != '/':
+                    source = os.path.join(os.getcwd(), source)
+
+                if fs.has_key("target") and type(fs["target"]) is not str:
+                    raise CloubedConfigurationException(
+                              "format of target of virtfs {id} of domain " \
+                              "{domain} is not valid" \
+                                  .format(id=id, domain=self.name))
+
+                if fs.has_key("target"):
+                    target = fs["target"]
+                else:
+                    target = source # default target is equal to source
+
+                self.virtfs.append({"source": source, "target": target})
+
+            id += 1
 
     def __parse_templates(self, conf):
         """
@@ -286,7 +427,7 @@ class ConfigurationDomain(ConfigurationItem):
             self.__parse_templates_files(conf['templates'])
             self.__parse_templates_vars(conf['templates'])
         else:
-            self._template_files = []
+            self.template_files = []
             self._template_vars = {}
 
     def __parse_templates_files(self, conf):
@@ -303,7 +444,7 @@ class ConfigurationDomain(ConfigurationItem):
                 raise CloubedConfigurationException(
                     "format of the files sub-section in the templates " \
                     "section of domain {domain} templates is not valid" \
-                        .format(domain = self._name))
+                        .format(domain = self.name))
 
             for tpl_file in tpl_files:
 
@@ -314,17 +455,17 @@ class ConfigurationDomain(ConfigurationItem):
                             "{parameter} parameter of a template file of " \
                             "domain {domain} is missing" \
                                 .format(parameter = parameter,
-                                        domain = self._name))
+                                        domain = self.name))
                     if type(tpl_file[parameter]) is not str:
                         raise CloubedConfigurationException(
                             "format of {parameter} parameter of a template " \
                             "file of domain {domain} is not valid" \
                                 .format(parameter = parameter,
-                                        domain = self._name))
+                                        domain = self.name))
                 # everything is clear at this point
-                self._template_files.append(tpl_file)
+                self.template_files.append(tpl_file)
         else:
-            self._template_files = []
+            self.template_files = []
 
     def __parse_templates_vars(self, conf):
         """
@@ -338,7 +479,7 @@ class ConfigurationDomain(ConfigurationItem):
                 raise CloubedConfigurationException(
                     "format of the vars sub-section in the templates " \
                     "section of domain {domain} templates is not valid" \
-                        .format(domain = self._name))
+                        .format(domain = self.name))
 
             for key, value in tpl_vars.iteritems():
                 if type(value) is not str and type(value) is not int:
@@ -346,7 +487,7 @@ class ConfigurationDomain(ConfigurationItem):
                           "format of the value of {key} template variable of " \
                           "domain {domain} is not valid"
                                 .format(key = key,
-                                        domain = self._name))
+                                        domain = self.name))
                 # everything is clear at this point
                 self._template_vars[key] = str(value)
         else:
@@ -357,49 +498,6 @@ class ConfigurationDomain(ConfigurationItem):
         """ Returns the type of the item """
 
         return u"domain"
-
-    def get_cpu(self):
-
-        """ Returns the number of CPU of the Domain Configuration """
-
-        return self._cpu 
-
-    def get_memory(self):
-
-        """ Returns the memory size of the Domain Configuration """
-
-        return self._memory
-
-    def get_graphics(self):
-
-        """ Returns graphics parameter of the Domain Configuration """
-
-        return self._graphics
-
-    def get_disks_dict(self):
-
-        """
-            Returns a dictionary of all parameters of all disks of the Domain
-            Configuration
-        """
-
-
-        return self._disks
-
-    def get_templates_list(self):
-
-        """ Returns the list of Templates of the Domain Configuration """
-
-        return self._template_files
-
-    def get_netifs_list(self):
-
-        """
-            Returns the list of network interfaces configurations of the Domain
-            Configuration
-        """
-
-        return self._netifs
 
     def get_contextual_templates_dict(self):
 
@@ -417,7 +515,7 @@ class ConfigurationDomain(ConfigurationItem):
             with absolute prefix
         """
 
-        clean_name = ConfigurationItem.clean_string_for_template(self._name)
+        clean_name = ConfigurationItem.clean_string_for_template(self.name)
         return self.get_templates_dict(prefix = \
                                        "domain.{name}".format(name=clean_name))
 
@@ -427,19 +525,19 @@ class ConfigurationDomain(ConfigurationItem):
             Returns a dictionary with all parameters of the Domain Configuration
         """
 
-        clean_name = ConfigurationItem.clean_string_for_template(self._name)
+        clean_name = ConfigurationItem.clean_string_for_template(self.name)
         domain_dict = { "{prefix}.name" \
                             .format(prefix=prefix) : str(clean_name),
                         "{prefix}.cpu" \
-                            .format(prefix=prefix) : str(self._cpu),
+                            .format(prefix=prefix) : str(self.cpu),
                         "{prefix}.memory" \
-                            .format(prefix=prefix) : str(self._memory),
+                            .format(prefix=prefix) : str(self.memory),
                         "{prefix}.graphics" \
-                            .format(prefix=prefix) : str(self._graphics),
+                            .format(prefix=prefix) : str(self.graphics),
                       }
 
         # add netifs
-        for netif in self._netifs:
+        for netif in self.netifs:
             if netif.has_key("ip"):
                 network_clean_name = \
                     ConfigurationItem.clean_string_for_template(netif['network'])

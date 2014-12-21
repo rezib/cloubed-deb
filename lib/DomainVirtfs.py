@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright 2013 Rémi Palancher 
+# Copyright 2014 Rémi Palancher
 #
 # This file is part of Cloubed.
 #
@@ -19,20 +19,13 @@
 # License along with Cloubed.  If not, see
 # <http://www.gnu.org/licenses/>.
 
-""" DomainDisk class of Cloubed """
+""" DomainVirtfs class of Cloubed """
 
-class DomainDisk:
+class DomainVirtfs:
 
-    """ DomainDisk class """
+    """ DomainVirtfs class """
 
-    def __init__(self, tbd, disk_conf):
+    def __init__(self, source, target):
 
-        self.device = disk_conf['device']
-        self.storage_volume = tbd.get_storage_volume_by_name(disk_conf['storage_volume'])
-        self.bus = disk_conf['bus']
-
-    def get_storage_volume_name(self):
-
-        """ Returns the name of the StorageVolume """
-
-        return self.storage_volume.name
+        self.source = source
+        self.target = target

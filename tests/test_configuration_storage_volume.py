@@ -12,7 +12,8 @@ class TestConfigurationStorageVolume(CloubedTestCase):
                                 'testbed': 'test_testbed',
                                 'format': 'qcow2',
                                 'size': 30,
-                                'storagepool': 'test_storage_pool' }
+                                'storagepool': 'test_storage_pool',
+                                'backing': 'test_backing' }
         self.storage_volume_conf = \
             ConfigurationStorageVolume(storage_volume_item)
 
@@ -23,29 +24,37 @@ class TestConfigurationStorageVolume(CloubedTestCase):
         self.assertEqual(self.storage_volume_conf._get_type(), 'storage volume')
 
 
-    def test_get_format(self):
+    def test_attr_format(self):
         """
-            ConfigurationStorageVolume.get_format() should return the format of
-            the storage volume
-        """
-        self.assertEqual(self.storage_volume_conf.get_format(),
-                         'qcow2')
-
-    def test_get_size(self):
-        """
-            ConfigurationStorageVolume.get_size() should return the size of the
+            ConfigurationStorageVolume.format should be the format of the
             storage volume
         """
-        self.assertEqual(self.storage_volume_conf.get_size(),
+        self.assertEqual(self.storage_volume_conf.format,
+                         'qcow2')
+
+    def test_attr_size(self):
+        """
+            ConfigurationStorageVolume.size should be the size of the storage
+            volume
+        """
+        self.assertEqual(self.storage_volume_conf.size,
                          30)
 
-    def test_get_storage_pool(self):
+    def test_attr_storage_pool(self):
         """
-            ConfigurationStorageVolume.get_storage_pool() should return the name
-            of the storage pool
+            ConfigurationStorageVolume.storage_pool should be the name of the
+            storage pool
         """
-        self.assertEqual(self.storage_volume_conf.get_storage_pool(),
+        self.assertEqual(self.storage_volume_conf.storage_pool,
                          'test_storage_pool')
+
+    def test_attr_backing(self):
+        """
+            ConfigurationStorageVolume.backing should be the name of the
+            (optional) backing storage volume
+        """
+        self.assertEqual(self.storage_volume_conf.backing,
+                         'test_backing')
 
 class TestConfigurationStorageVolumeSize(CloubedTestCase):
 
@@ -65,7 +74,7 @@ class TestConfigurationStorageVolumeSize(CloubedTestCase):
         """
         conf = { 'size': 50 }
         self.storage_volume_conf._ConfigurationStorageVolume__parse_size(conf)
-        self.assertEqual(self.storage_volume_conf.get_size(), 50)
+        self.assertEqual(self.storage_volume_conf.size, 50)
 
     def test_parse_size_missing(self):
         """
@@ -77,7 +86,7 @@ class TestConfigurationStorageVolumeSize(CloubedTestCase):
         self.assertRaisesRegexp(
                  CloubedConfigurationException,
                  "size parameter of storage volume {name} is missing" \
-                     .format(name=self.storage_volume_conf.get_name()),
+                     .format(name=self.storage_volume_conf.name),
                  self.storage_volume_conf._ConfigurationStorageVolume__parse_size,
                  invalid_conf)
 
@@ -96,7 +105,7 @@ class TestConfigurationStorageVolumeSize(CloubedTestCase):
                      CloubedConfigurationException,
                      "format of size parameter of storage volume {name} " \
                      "is not valid" \
-                         .format(name=self.storage_volume_conf.get_name()),
+                         .format(name=self.storage_volume_conf.name),
                      self.storage_volume_conf._ConfigurationStorageVolume__parse_size,
                      invalid_conf)
 
@@ -119,7 +128,7 @@ class TestConfigurationStorageVolumeStoragePool(CloubedTestCase):
         """
         conf = { 'storagepool': 'test_storage_pool_bis' }
         self.storage_volume_conf._ConfigurationStorageVolume__parse_storage_pool(conf)
-        self.assertEqual(self.storage_volume_conf.get_storage_pool(), 
+        self.assertEqual(self.storage_volume_conf.storage_pool, 
                          'test_storage_pool_bis')
 
     def test_parse_storage_pool_missing(self):
@@ -132,7 +141,7 @@ class TestConfigurationStorageVolumeStoragePool(CloubedTestCase):
         self.assertRaisesRegexp(
                  CloubedConfigurationException,
                  "storagepool parameter of storage volume {name} is missing" \
-                     .format(name=self.storage_volume_conf.get_name()),
+                     .format(name=self.storage_volume_conf.name),
                  self.storage_volume_conf._ConfigurationStorageVolume__parse_storage_pool,
                  invalid_conf)
 
@@ -151,7 +160,7 @@ class TestConfigurationStorageVolumeStoragePool(CloubedTestCase):
                      CloubedConfigurationException,
                      "format of storagepool parameter of storage volume {name} " \
                      "is not valid" \
-                         .format(name=self.storage_volume_conf.get_name()),
+                         .format(name=self.storage_volume_conf.name),
                      self.storage_volume_conf._ConfigurationStorageVolume__parse_storage_pool,
                      invalid_conf)
 
@@ -175,11 +184,11 @@ class TestConfigurationStorageVolumeFormat(CloubedTestCase):
 
         conf = { 'format': 'raw' }
         self.storage_volume_conf._ConfigurationStorageVolume__parse_format(conf)
-        self.assertEqual(self.storage_volume_conf.get_format(), 'raw')
+        self.assertEqual(self.storage_volume_conf.format, 'raw')
 
         conf = { }
         self.storage_volume_conf._ConfigurationStorageVolume__parse_format(conf)
-        self.assertEqual(self.storage_volume_conf.get_format(), 'qcow2')
+        self.assertEqual(self.storage_volume_conf.format, 'qcow2')
 
     def test_parse_format_invalid_format(self):
         """
@@ -196,7 +205,7 @@ class TestConfigurationStorageVolumeFormat(CloubedTestCase):
                      CloubedConfigurationException,
                      "format of format parameter of storage volume {name} " \
                      "is not valid" \
-                         .format(name=self.storage_volume_conf.get_name()),
+                         .format(name=self.storage_volume_conf.name),
                      self.storage_volume_conf._ConfigurationStorageVolume__parse_format,
                      invalid_conf)
 
@@ -211,11 +220,59 @@ class TestConfigurationStorageVolumeFormat(CloubedTestCase):
         self.assertRaisesRegexp(
                  CloubedConfigurationException,
                  "value of format parameter of storage volume {name} is not valid" \
-                     .format(name=self.storage_volume_conf.get_name()),
+                     .format(name=self.storage_volume_conf.name),
                  self.storage_volume_conf._ConfigurationStorageVolume__parse_format,
                  invalid_conf)
+
+class TestConfigurationStorageVolumeBacking(CloubedTestCase):
+
+    def setUp(self):
+        storage_volume_item = { 'name': 'test_name',
+                                'testbed': 'test_testbed',
+                                'format': 'qcow2',
+                                'size': 30,
+                                'storagepool': 'test_storage_pool' }
+        self.storage_volume_conf = \
+            ConfigurationStorageVolume(storage_volume_item)
+
+    def test_parse_backing_ok(self):
+        """
+            ConfigurationStorageVolume.__parse_backing() should parse valid
+            backing parameter without error and properly set backing instance
+            attribute
+        """
+        conf = { 'backing': 'test_backing' }
+        self.storage_volume_conf._ConfigurationStorageVolume__parse_backing(conf)
+        self.assertEqual(self.storage_volume_conf.backing,
+                         'test_backing')
+        # backing parameter is optional, backing attribute should be None in
+        # this case
+        conf = { }
+        self.storage_volume_conf._ConfigurationStorageVolume__parse_backing(conf)
+        self.assertEqual(self.storage_volume_conf.backing,
+                         None)
+
+    def test_parse_backing_invalid_format(self):
+        """
+            ConfigurationStorageVolume.__parse_backing() should raise
+            CloubedConfigurationException when the format of the backing
+            parameter is not valid
+        """
+        invalid_confs = [ { 'backing': 42   },
+                          { 'backing': []   } ]
+
+        for invalid_conf in invalid_confs:
+            self.assertRaisesRegexp(
+                     CloubedConfigurationException,
+                     "format of backing parameter of storage volume {name} " \
+                     "is not valid" \
+                         .format(name=self.storage_volume_conf.name),
+                     self.storage_volume_conf._ConfigurationStorageVolume__parse_backing,
+                     invalid_conf)
+
 
 loadtestcase(TestConfigurationStorageVolume)
 loadtestcase(TestConfigurationStorageVolumeSize)
 loadtestcase(TestConfigurationStorageVolumeStoragePool)
 loadtestcase(TestConfigurationStorageVolumeFormat)
+loadtestcase(TestConfigurationStorageVolumeBacking)
