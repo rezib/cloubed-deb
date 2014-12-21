@@ -21,6 +21,8 @@
 
 """ DomainTemplate class of Cloubed """
 
+import os
+import logging
 from string import Template
 from CloubedException import CloubedException
 
@@ -42,22 +44,32 @@ class DomainTemplate():
 
     def __init__(self, domain_template_conf):
 
-        self._name = domain_template_conf['name']
+        self.name = domain_template_conf['name']
         self._source_file = domain_template_conf['input']
         self._output_file = domain_template_conf['output']
 
-    def get_name(self):
-
-        """ get_name: Returns the name of the template """
-
-        return self._name
-
     def render(self, template_dict):
 
-        """ render: renders the template """
+        """Renders the output file based on the source template.
 
-        template_str = ExtTemplate(open(self._source_file, 'r').read()) \
+           :param dict template_dict: the dictionnary of variable value pairs
+               to substitute in the template file
+           :exceptions CloubedException:
+               * the source template could not be read
+               * the output file could not be written
+        """
+
+        try:
+            input_file = open(self._source_file, 'r')
+        except IOError, err:
+            raise CloubedException(
+                      "error while reading template file {filename}: {err}" \
+                          .format(filename=self._source_file,
+                                  err=err))
+
+        template_str = ExtTemplate(input_file.read()) \
                            .safe_substitute(template_dict)
+
         try:
             output_file = open(self._output_file, 'w')
             output_file.write(template_str)
@@ -65,5 +77,18 @@ class DomainTemplate():
         except IOError, err:
             raise CloubedException(
                       "error while writing to template file {filename}: {err}" \
-                          .format(filename = self._output_file,
-                                  err = err))
+                          .format(filename=self._output_file,
+                                  err=err))
+
+    def delete(self):
+        """Delete the output file of the DomainTemplate if it exists."""
+        if os.path.exists(self._output_file) and \
+           os.path.isfile(self._output_file):
+            try:
+                logging.warning("removing template output file {file}" \
+                                    .format(file=self._output_file))
+                os.unlink(self._output_file)
+            except OSError, err:
+                logging.error("error while removing file {file}: {error}" \
+                                  .format(file=self._output_file,
+                                          error=err))

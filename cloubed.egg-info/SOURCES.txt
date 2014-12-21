@@ -27,12 +27,14 @@ lib/DomainEvent.py
 lib/DomainNetif.py
 lib/DomainSnapshot.py
 lib/DomainTemplate.py
+lib/DomainVirtfs.py
 lib/EventManager.py
 lib/HTTPServer.py
 lib/Network.py
 lib/StoragePool.py
 lib/StorageVolume.py
 lib/Utils.py
+lib/VirtController.py
 lib/__init__.py
 lib/cli/CloubedArgumentParser.py
 lib/cli/CloubedCli.py
@@ -47,6 +49,8 @@ lib/conf/ConfigurationStorageVolume.py
 lib/conf/__init__.py
 scripts/cloubed
 tests/CloubedTests.py
+tests/Mock.py
+tests/test_cloubed.py
 tests/test_cloubed_argument_parser.py
 tests/test_configuration.py
 tests/test_configuration_domain.py
@@ -55,6 +59,7 @@ tests/test_configuration_loader.py
 tests/test_configuration_network.py
 tests/test_configuration_storage_pool.py
 tests/test_configuration_storage_volume.py
+tests/test_virtcontroller.py
 tests/config/cloubed_empty.yaml
 tests/config/cloubed_invalid_yaml.txt
 tests/config/cloubed_valid.yaml
