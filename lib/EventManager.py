@@ -22,19 +22,20 @@
 """ EventManager class of Cloubed """
 
 import threading
-import libvirt
 import logging
-from Domain import Domain
+
+from VirtController import VirtController
 from DomainEvent import DomainEvent
 
 class EventManager:
 
     """ EventManager class """
 
-    def __init__(self):
+    tbd = None
 
-        libvirt.virEventRegisterDefaultImpl()
+    def __init__(self, tbd):
 
+        VirtController.event_register()
         self._stop = threading.Event()
 
         self._thread = threading.Thread(target=self.run_event_loop,
@@ -42,11 +43,11 @@ class EventManager:
         self._thread.setDaemon(True)
         self._thread.start()
 
-        self._conn = libvirt.openReadOnly('qemu:///system')
-        self._conn.domainEventRegisterAny(None, \
-                                          libvirt.VIR_DOMAIN_EVENT_ID_LIFECYCLE, \
-                                          EventManager.manage_event, None)
-        self._conn.setKeepAlive(5, 3)
+        self._ctl = VirtController(read_only=True)
+        self._ctl.domain_event_register(EventManager.manage_event)
+        self._ctl.setKeepAlive(5, 3)
+
+        EventManager.tbd = tbd
 
         logging.debug("initialized event manager")
 
@@ -61,10 +62,9 @@ class EventManager:
 
         # In race conditions on python interpreter exit, libvirt sometimes
         # becomes None. So loop conditioner tests if it is still defined in
-        # order to avoid awful errors.
-        while not self._stop.is_set() and \
-              libvirt is not None:
-            libvirt.virEventRunDefaultImpl()
+        # order to avoid  errors.
+        while not self._stop.is_set():
+            VirtController.event_run()
 
     @staticmethod
     def manage_event(conn, dom, event_type, event_detail, opaque):
@@ -76,9 +76,10 @@ class EventManager:
                       "{event_type} {event_detail}" \
                           .format(domain_name=dom.name(),
                                   domain_id=dom.ID(),
-                                  event_type=event.get_type(),
-                                  event_detail=event.get_detail()))
-        domain = Domain.get_by_libvirt_name(dom.name())
+                                  event_type=event.type,
+                                  event_detail=event.detail))
+
+        domain = EventManager.tbd.get_domain_by_libvirt_name(dom.name())
         # test if notified event comes from a domain in current testbed
         if domain is None:
             logging.debug("event received for domain {domain} but not found " \

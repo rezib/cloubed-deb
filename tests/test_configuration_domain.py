@@ -1,9 +1,12 @@
 #!/usr/bin/env python
 
+import os
+
 from CloubedTests import *
 
 from lib.conf.ConfigurationDomain import ConfigurationDomain
 from lib.CloubedException import CloubedConfigurationException
+from lib.VirtController import VirtController
 
 valid_domain_item = { 'name': 'test_name',
                       'testbed': 'test_testbed',
@@ -14,7 +17,11 @@ valid_domain_item = { 'name': 'test_name',
                             'ip': '10.0.0.1' } ],
                       'disks': [
                           { 'device': 'test_device',
-                            'storage_volume': 'test_storage_volume' } ] }
+                            'storage_volume': 'test_storage_volume',
+                            'bus': 'virtio' } ],
+                      'virtfs': [
+                          { 'source': '/test_source',
+                            'target': 'test_target' } ] }
 
 class TestConfigurationDomain(CloubedTestCase):
 
@@ -30,44 +37,54 @@ class TestConfigurationDomain(CloubedTestCase):
         """
         self.assertEqual(self.domain_conf._get_type(), 'domain')
 
-    def test_get_cpu(self):
+    def test_attr_cpu(self):
         """
-            ConfigurationDomain.get_cpu() should return the cpu of the domain
+            ConfigurationDomain.cpu should be the cpu of the domain
         """
-        self.assertEqual(self.domain_conf.get_cpu(),
+        self.assertEqual(self.domain_conf.cpu,
                          2)
 
-    def test_get_memory(self):
+    def test_attr_memory(self):
         """
-            ConfigurationDomain.get_memory() should return the memory size of
-            the domain (in MB)
+            ConfigurationDomain.memory should be the memory size of the domain
+            (in MB)
         """
-        self.assertEqual(self.domain_conf.get_memory(),
+        self.assertEqual(self.domain_conf.memory,
                          1024)
 
-    def test_get_templates_list(self):
+    def test_attr_template_files(self):
         """
-            ConfigurationDomain.get_templates_list() should return the list of
-            templates of the domain
+            ConfigurationDomain.template_files should be the list of templates
+            of the domain
         """
-        self.assertEqual(self.domain_conf.get_templates_list(),
+        self.assertEqual(self.domain_conf.template_files,
                          [])
 
-    def test_get_netifs_list(self):
+    def test_attr_netifs(self):
         """
-            ConfigurationDomain.get_netifs_list() should return the list of
-            netifs of the domain
+            ConfigurationDomain.netifs should be the list of netifs of the
+            domain
         """
-        self.assertEqual(self.domain_conf.get_netifs_list(),
+        self.assertEqual(self.domain_conf.netifs,
                          [{ 'network': 'test_netif', 'ip': '10.0.0.1' }])
 
-    def test_get_disks_dict(self): 
+    def test_attr_disks(self):
         """
-            ConfigurationDomain.get_disks_dict() should return a dict with all
-            disks of the domain
+            ConfigurationDomain.disks should be a list with all disks of
+            the domain
         """
-        self.assertEqual(self.domain_conf.get_disks_dict(),
-                         { 'test_device': 'test_storage_volume' })
+        self.assertEqual(self.domain_conf.disks,
+                         [{ 'device': 'test_device',
+                            'storage_volume': 'test_storage_volume',
+                            'bus': 'virtio' }])
+
+    def test_attr_virtfs(self):
+        """
+            ConfigurationDomain.virtf should be a list with all virtfs of the
+            domain
+        """
+        self.assertEqual(self.domain_conf.virtfs,
+                         [{ 'source': '/test_source', 'target': 'test_target' }])
 
 class TestConfigurationDomainCpu(CloubedTestCase):
 
@@ -126,7 +143,7 @@ class TestConfigurationDomainMemory(CloubedTestCase):
         for memory, expected_value in valid_memories.iteritems():
             config = { 'memory': memory }
             self.domain_conf._ConfigurationDomain__parse_memory(config)
-            self.assertEqual(self.domain_conf.get_memory(),
+            self.assertEqual(self.domain_conf.memory,
                              expected_value)
 
     def test_parse_memory_missing(self):
@@ -203,14 +220,20 @@ class TestConfigurationDomainGraphics(CloubedTestCase):
 
     def test_parse_graphics_ok(self):
         """
-            ConfigurationDomain.__parse_graphics() should raise
-            CloubedConfigurationException when invalid graphics format is given
-            in parameter
+            ConfigurationDomain.__parse_graphics() should properly set graphics
+            attribute
         """
 
         conf = { 'graphics': 'vnc' }
         self.domain_conf._ConfigurationDomain__parse_graphics(conf)
-        self.assertEqual(self.domain_conf.get_graphics(), 'vnc')
+        self.assertEqual(self.domain_conf.graphics, 'vnc')
+
+        conf = { } # default is spice if controller supports else it is vnc
+        self.domain_conf._ConfigurationDomain__parse_graphics(conf)
+        if VirtController.supports_spice():
+            self.assertEqual(self.domain_conf.graphics, 'spice')
+        else:
+            self.assertEqual(self.domain_conf.graphics, 'vnc')
 
     def test_parse_graphics_invalid_format(self):
         """
@@ -363,6 +386,41 @@ class TestConfigurationDomainNetifs(CloubedTestCase):
                      self.domain_conf._ConfigurationDomain__parse_netifs,
                      invalid_config)
 
+    def test_parse_netifs_invalid_mac_format(self):
+        """
+            ConfigurationDomain.__parse_netifs() should raise
+            CloubedConfigurationException when netifs in parameter have invalid
+            MAC address format
+        """
+
+        invalid_configs = [ { 'netifs': [ { 'network': 'test', 'mac': None } ] },
+                            { 'netifs': [ { 'network': 'test', 'mac': 42   } ] } ]
+
+        for invalid_config in invalid_configs:
+
+            self.assertRaisesRegexp(
+                     CloubedConfigurationException,
+                     "format of mac of netif 0 of domain test_name is not " \
+                     "valid",
+                     self.domain_conf._ConfigurationDomain__parse_netifs,
+                     invalid_config)
+
+    def test_parse_netifs_invalid_mac_value(self):
+        """
+            ConfigurationDomain.__parse_netifs() should raise
+            CloubedConfigurationException when netifs in parameter have invalid
+            MAC address value
+        """
+
+        invalid_config = { 'netifs': [ { 'network': 'test', 'mac': 'fail' } ] }
+
+        self.assertRaisesRegexp(
+                 CloubedConfigurationException,
+                 "value of mac parameter of netif 0 of domain test_name is " \
+                 "not a valid mac address",
+                 self.domain_conf._ConfigurationDomain__parse_netifs,
+                 invalid_config)
+
 class TestConfigurationDomainDisks(CloubedTestCase):
 
     def setUp(self):
@@ -499,6 +557,243 @@ class TestConfigurationDomainDisks(CloubedTestCase):
                      self.domain_conf._ConfigurationDomain__parse_disks,
                      invalid_config)
 
+    def test_parse_disks_bus_ok(self):
+        """
+            ConfigurationDomain.__parse_disks() should properly set disk bus
+            attribute
+        """
+
+        conf = { 'disks': [ { 'device': 'test_device',
+                              'storage_volume': 'test_storage_volume',
+                              'bus': 'scsi' } ] }
+
+        self.domain_conf._ConfigurationDomain__parse_disks(conf)
+        self.assertEqual(self.domain_conf.disks,
+                         conf['disks'])
+
+        # test default bus is virtio
+        conf['disks'][0].pop('bus', None)
+        self.domain_conf._ConfigurationDomain__parse_disks(conf)
+        conf['disks'][0]['bus'] = 'virtio'
+        self.assertEqual(self.domain_conf.disks,
+                         conf['disks'])
+
+    def test_parse_disks_bus_invalid_format(self):
+        """
+            ConfigurationDomain.__parse_disks() should raise
+            CloubedConfigurationException if the format of bus parameter of one
+            disk is not valid
+        """
+
+        invalid_configs = [ { 'disks': [ { 'device': 'test_device',
+                                           'storage_volume': 'test_storage_volume',
+                                           'bus': 42 } ] },
+                            { 'disks': [ { 'device': 'test_device',
+                                           'storage_volume': 'test_storage_volume',
+                                           'bus': None } ] } ]
+
+        for invalid_config in invalid_configs:
+
+            self.assertRaisesRegexp(
+                     CloubedConfigurationException,
+                     "format of bus of disk 0 of domain test_name " \
+                     "is not valid",
+                     self.domain_conf._ConfigurationDomain__parse_disks,
+                     invalid_config)
+
+    def test_parse_disks_bus_invalid_value(self):
+        """
+            ConfigurationDomain.__parse_disks() should raise
+            CloubedConfigurationException if the value of bus parameter of one
+            disk is not valid
+        """
+
+        invalid_config = { 'disks': [ { 'device': 'test_device',
+                                        'storage_volume': 'test_storage_volume',
+                                        'bus': 'fail' } ] }
+
+        self.assertRaisesRegexp(
+                 CloubedConfigurationException,
+                 "value fail of bus of disk 0 of domain test_name " \
+                 "is not valid",
+                 self.domain_conf._ConfigurationDomain__parse_disks,
+                 invalid_config)
+
+class TestConfigurationDomainCdrom(CloubedTestCase):
+
+    def setUp(self):
+        self._domain_item = valid_domain_item
+        self.domain_conf = ConfigurationDomain(self._domain_item)
+
+    def test_parse_cdrom_ok(self):
+        """
+            ConfigurationDomain.__parse_cdrom() should properly set cdrom
+            attribute
+        """
+
+        conf = { 'cdrom': '/file.iso' } # absolute path
+        self.domain_conf._ConfigurationDomain__parse_cdrom(conf)
+        self.assertEqual(self.domain_conf.cdrom, '/file.iso')
+
+        conf = { 'cdrom': 'file.iso' } # relative path
+        self.domain_conf._ConfigurationDomain__parse_cdrom(conf)
+        self.assertEqual(self.domain_conf.cdrom,
+                         os.path.join(os.getcwd(), 'file.iso') )
+
+        conf = { } # default is None
+        self.domain_conf._ConfigurationDomain__parse_cdrom(conf)
+        self.assertEqual(self.domain_conf.cdrom, None)
+
+    def test_parse_cdrom_invalid_format(self):
+        """
+            ConfigurationDomain.__parse_cdrom() should raise
+            CloubedConfigurationException when invalid cdrom format is given
+            in parameter
+        """
+
+        invalid_cdroms = [ { 'cdrom': 4    },
+                           { 'cdrom': {}   },
+                           { 'cdrom': []   },
+                           { 'cdrom': None } ]
+
+        for cdrom in invalid_cdroms:
+            self.assertRaisesRegexp(
+                     CloubedConfigurationException,
+                     "format of cdrom parameter of domain test_name is not " \
+                     "valid",
+                     self.domain_conf._ConfigurationDomain__parse_cdrom,
+                     cdrom)
+
+class TestConfigurationDomainVirtfs(CloubedTestCase):
+
+    def setUp(self):
+        self._domain_item = valid_domain_item
+        self.domain_conf = ConfigurationDomain(self._domain_item)
+
+    def test_parse_virtfs_missing(self):
+        """
+            ConfigurationDomain.__parse_virtfs() should properly set virtfs
+            attribute
+        """
+
+        conf = { 'virtfs': [ { 'source': '/test_source', 'target': 'test_target' } ] }
+        self.domain_conf._ConfigurationDomain__parse_virtfs(conf)
+        self.assertEqual(self.domain_conf.virtfs[0]['source'], '/test_source')
+        self.assertEqual(self.domain_conf.virtfs[0]['target'], 'test_target')
+
+        # source is a relative path
+        conf = { 'virtfs': [ { 'source': 'test_source2', 'target': 'test_target2' } ] }
+        self.domain_conf._ConfigurationDomain__parse_virtfs(conf)
+        self.assertEqual(self.domain_conf.virtfs[0]['source'],
+                         os.path.join(os.getcwd(), 'test_source2'))
+        self.assertEqual(self.domain_conf.virtfs[0]['target'], 'test_target2')
+
+        conf = { 'virtfs': [ { 'source': '/test_source3' } ] }
+        self.domain_conf._ConfigurationDomain__parse_virtfs(conf)
+        self.assertEqual(self.domain_conf.virtfs[0]['source'], '/test_source3')
+        self.assertEqual(self.domain_conf.virtfs[0]['target'], '/test_source3')
+
+        conf = { }
+        self.domain_conf._ConfigurationDomain__parse_virtfs(conf)
+        self.assertEqual(self.domain_conf.virtfs, [])
+
+    def test_parse_virtfs_invalid_format(self):
+        """
+            ConfigurationDomain.__parse_virtfs() should raise
+            CloubedConfigurationException when invalid virtfs format is given
+            in parameter
+        """
+
+        invalid_configs = [ { 'virtfs': 'invalid_virtfs' },
+                            { 'virtfs': {}               },
+                            { 'virtfs': 42               },
+                            { 'virtfs': None             } ]
+
+        for invalid_config in invalid_configs:
+
+            self.assertRaisesRegexp(
+                     CloubedConfigurationException,
+                     "format of virtfs section of domain test_name is not valid",
+                     self.domain_conf._ConfigurationDomain__parse_virtfs,
+                     invalid_config)
+
+    def test_parse_virtfs_invalid_format_2(self):
+        """
+            ConfigurationDomain.__parse_virtfs() should raise
+            CloubedConfigurationException when invalid virtfs format is given
+            in parameter
+        """
+
+        invalid_configs = [ { 'virtfs': [ 'invalid_virtfs' ] },
+                            { 'virtfs': [ None             ] },
+                            { 'virtfs': [ 0, 42            ] } ]
+
+        for invalid_config in invalid_configs:
+
+            self.assertRaisesRegexp(
+                     CloubedConfigurationException,
+                     "format of virtfs 0 of domain test_name is not valid",
+                     self.domain_conf._ConfigurationDomain__parse_virtfs,
+                     invalid_config)
+
+    def test_parse_virtfs_missing_source(self):
+        """
+            ConfigurationDomain.__parse_virtfs() should raise
+            CloubedConfigurationException when virtfs in parameter does not have
+            any source
+        """
+
+        invalid_configs = [ { 'virtfs': [ {                 } ] },
+                            { 'virtfs': [ { 'no' : 'source' } ] } ]
+
+        for invalid_config in invalid_configs:
+
+            self.assertRaisesRegexp(
+                     CloubedConfigurationException,
+                     "source of virtfs 0 of domain test_name is missing",
+                     self.domain_conf._ConfigurationDomain__parse_virtfs,
+                     invalid_config)
+
+    def test_parse_virtfs_invalid_source(self):
+        """
+            ConfigurationDomain.__parse_virtfs() should raise
+            CloubedConfigurationException when virtfs in parameter has an
+            invalid source
+        """
+
+        invalid_configs = [ { 'virtfs': [ { 'source': None } ] },
+                            { 'virtfs': [ { 'source': 42   } ] } ]
+
+        for invalid_config in invalid_configs:
+
+            self.assertRaisesRegexp(
+                     CloubedConfigurationException,
+                     "format of source of virtfs 0 of domain test_name is " \
+                     "not valid",
+                     self.domain_conf._ConfigurationDomain__parse_virtfs,
+                     invalid_config)
+
+    def test_parse_disks_invalid_target(self):
+        """
+            ConfigurationDomain.__parse_disks() should raise
+            CloubedConfigurationException when disks in parameter have invalid
+            storage volume
+        """
+
+        invalid_configs = [ { 'virtfs': [ { 'source': 'test_source',
+                                            'target': None } ] },
+                            { 'virtfs': [ { 'source': 'test_source',
+                                            'target': 42 } ] } ]
+
+        for invalid_config in invalid_configs:
+
+            self.assertRaisesRegexp(
+                     CloubedConfigurationException,
+                     "format of target of virtfs 0 of domain test_name is " \
+                     "not valid",
+                     self.domain_conf._ConfigurationDomain__parse_virtfs,
+                     invalid_config)
+
 class TestConfigurationDomainTemplates(CloubedTestCase):
 
     def setUp(self):
@@ -517,7 +812,7 @@ class TestConfigurationDomainTemplates(CloubedTestCase):
                                     'output': 'test_template_file_output' } ],
                        'vars': { 'var_name': 'var_value' } } }
         self.domain_conf._ConfigurationDomain__parse_templates(conf)
-        self.assertEquals(len(self.domain_conf.get_templates_list()), 1)
+        self.assertEquals(len(self.domain_conf.template_files), 1)
         self.assertDictContainsSubset(
                           {'domain.test_name.name': 'test_name'},
                           self.domain_conf.get_absolute_templates_dict())
@@ -527,8 +822,7 @@ class TestConfigurationDomainTemplates(CloubedTestCase):
 
         conf = { 'templates': {} }
         self.domain_conf._ConfigurationDomain__parse_templates(conf)
-        self.assertEqual(self.domain_conf.get_templates_list(), [])
-        self.assertEqual(self.domain_conf._template_files, [])
+        self.assertEqual(self.domain_conf.template_files, [])
         self.assertEqual(self.domain_conf._template_vars, {})
 
     def test_parse_templates_invalid_files_format(self):
@@ -621,4 +915,6 @@ loadtestcase(TestConfigurationDomainMemory)
 loadtestcase(TestConfigurationDomainGraphics)
 loadtestcase(TestConfigurationDomainNetifs)
 loadtestcase(TestConfigurationDomainDisks)
+loadtestcase(TestConfigurationDomainCdrom)
+loadtestcase(TestConfigurationDomainVirtfs)
 loadtestcase(TestConfigurationDomainTemplates)

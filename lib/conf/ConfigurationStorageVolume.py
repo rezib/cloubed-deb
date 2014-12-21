@@ -32,12 +32,14 @@ class ConfigurationStorageVolume(ConfigurationItem):
 
         super(ConfigurationStorageVolume, self).__init__(storage_volume_item)
 
-        self._size = None
+        self.size = None
         self.__parse_size(storage_volume_item)
-        self._storage_pool = None
+        self.storage_pool = None
         self.__parse_storage_pool(storage_volume_item)
-        self._format = None
+        self.format = None
         self.__parse_format(storage_volume_item)
+        self.backing = None
+        self.__parse_backing(storage_volume_item)
 
     def __parse_size(self, conf):
         """
@@ -47,16 +49,16 @@ class ConfigurationStorageVolume(ConfigurationItem):
         if not conf.has_key('size'):
             raise CloubedConfigurationException(
                       "size parameter of storage volume {name} is missing" \
-                          .format(name=self._name))
+                          .format(name=self.name))
 
         size = conf['size']
 
         if type(size) is not int:
             raise CloubedConfigurationException(
                       "format of size parameter of storage volume {name} is " \
-                      "not valid".format(name=self._name))
+                      "not valid".format(name=self.name))
 
-        self._size = size
+        self.size = size
 
     def __parse_storage_pool(self, conf):
         """
@@ -66,16 +68,16 @@ class ConfigurationStorageVolume(ConfigurationItem):
         if not conf.has_key('storagepool'):
             raise CloubedConfigurationException(
                       "storagepool parameter of storage volume {name} is " \
-                      "missing".format(name=self._name))
+                      "missing".format(name=self.name))
 
         storage_pool = conf['storagepool']
 
         if type(storage_pool) is not str:
             raise CloubedConfigurationException(
                       "format of storagepool parameter of storage volume " \
-                      "{name} is not valid".format(name=self._name))
+                      "{name} is not valid".format(name=self.name))
 
-        self._storage_pool = storage_pool
+        self.storage_pool = storage_pool
 
     def __parse_format(self, conf):
         """
@@ -89,44 +91,48 @@ class ConfigurationStorageVolume(ConfigurationItem):
             if type(vol_format) is not str:
                 raise CloubedConfigurationException(
                           "format of format parameter of storage volume " \
-                          "{name} is not valid".format(name=self._name))
+                          "{name} is not valid".format(name=self.name))
 
             valid_vol_formats = [ 'qcow2', 'raw' ]
 
             if vol_format not in valid_vol_formats:
                 raise CloubedConfigurationException(
                           "value of format parameter of storage volume " \
-                          "{name} is not valid".format(name=self._name))
+                          "{name} is not valid".format(name=self.name))
 
-            self._format = vol_format
+            self.format = vol_format
 
         else:
             # default value to qcow2
-            self._format = 'qcow2'
+            self.format = 'qcow2'
+
+    def __parse_backing(self, conf):
+        """
+            Parses the backing parameter over the conf dictionary given in
+            parameter and raises appropriate exception if a problem is found.
+        """
+        if conf.has_key('backing'):
+
+            # TODO: is size parameter useless in this case? TBC.
+
+            backing = conf['backing']
+
+            if type(backing) is not str:
+                raise CloubedConfigurationException(
+                          "format of backing parameter of storage volume " \
+                          "{name} is not valid".format(name=self.name))
+
+            self.backing = backing
+
+        else:
+            # default to None, aka. no backing
+            self.backing = None
 
     def _get_type(self):
 
         """ Returns the type of the item """
 
         return u"storage volume"
-
-    def get_format(self):
-
-        """ Returns the format of the Storage Volume in Configuration """
-
-        return self._format
-
-    def get_size(self):
-
-        """ Returns the size of the Storage Volume in Configuration """
-
-        return self._size
-
-    def get_storage_pool(self):
-
-        """ Returns the name of associated Storage Pool in Configuration """
-
-        return self._storage_pool
 
     def get_templates_dict(self):
 
@@ -135,11 +141,11 @@ class ConfigurationStorageVolume(ConfigurationItem):
             Configuration
         """
 
-        clean_name = ConfigurationItem.clean_string_for_template(self._name)
+        clean_name = ConfigurationItem.clean_string_for_template(self.name)
 
         return { "storagevolume.{name}.format"      \
-                     .format(name=clean_name) : str(self._format),
+                     .format(name=clean_name) : str(self.format),
                  "storagevolume.{name}.size"        \
-                     .format(name=clean_name) : str(self._size),
+                     .format(name=clean_name) : str(self.size),
                  "storagevolume.{name}.storagepool" \
-                     .format(name=clean_name) : str(self._storage_pool) }
+                     .format(name=clean_name) : str(self.storage_pool) }
