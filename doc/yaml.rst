@@ -38,9 +38,17 @@ Here is an example of a minimal YAML file for Cloubed::
           - device: sda
             storage_volume: bar-vol
 
-It must contain these 5 required main sections: ``testbed``, ``storagepools``,
-``storagevolumes``, ``networks`` and ``domains``. It may also contain an
-optional ``templates`` section.
+It must contain these 4 required main sections:
+
+* ``testbed``
+* ``networks``
+* ``domains``
+
+It may also contain these optional main sections:
+
+* ``templates``
+* ``storagepools``,
+* ``storagevolumes``
 
 The ``testbed`` section only contains the name of the testbed. This name simply
 has to be a valid string.
@@ -50,9 +58,9 @@ All the other sections of YAML file are described in the following sub-parts.
 Storage pools
 -------------
 
-The ``storagepools`` section contains a list of storage pools or, in other
-words, a list of places where will be stored the storage volumes of the testbed.
-The parameters to define a storage pool are:
+The optional ``storagepools`` section contains a list of storage pools or, in
+other words, a list of places where will be stored the storage volumes of the
+testbed. The parameters to define a storage pool are:
 
 * ``name``: a valid string unique across all storage pools
 * ``path``: path to an existing directory on the system. The path can be either
@@ -65,18 +73,32 @@ In the given minimal example, one storage pool is defined. Its name is
 ``foo-pool`` and its path is the ``pool/`` directory located in the same
 directory as the YAML file.
 
+If not present in YAML file, a default storage pool is automatically defined by
+default with the following values:
+
+* ``name``: ``pool``
+* ``path``: relative directory ``pool``
+
+.. _yaml-storagevolumes:
+
 Storage volumes
 ---------------
 
-The ``storagevolumes`` section contains a list of storage volumes, *aka.* the
-storage block devices used in the testbed. The parameters to define a storage
-volume are:
+The optional ``storagevolumes`` section contains a list of storage volumes,
+*aka.* the storage block devices used in the testbed. The storage volumes can
+either be defined in this dedicated section or directly in the
+:ref:`domains <yaml-domains>` disks sub-section.
+
+The parameters to define a storage volume are:
 
 * ``name``: a valid string unique across all storage volumes
-* ``storagepool``: the name of the storage pool in which the volume will be
-  created and stored. The storage pool must be defined in the dedicated section.
 * ``size``: an integer representing the total size of the storage volume in
   gigabytes.
+* ``storagepool`` *(optional)*: the name of the storage pool in which the volume
+  will be created and stored. This parameter is required if more than one
+  storage pool is defined. Else, the unique storage is assumed. If set, the
+  referred storage pool must either be defined in the dedicated section or be
+  the default storage pool.
 * ``format`` *(optional)*: the format of the storage volume file. It must be one
   of the formats supported by QEMU (see the output of command
   ``qemu-img --help`` for the complete list). The default value is ``qcow2`` and
@@ -148,7 +170,13 @@ Others forwarding modes
 
 In both ``none`` and ``nat`` forwarding modes, the node virtual network
 interface connected to dedicated bridge can be optionally configured with the
-following parameters:
+following parameter:
+
+* ``address`` *(optional)*: the network address in CIDR notation of the node
+  virtual network interface (eg. ``10.0.0.1/24``)
+
+In old versions of cloubed, there were two similar deprecated parameters for
+the same purpose:
 
 * ``ip_host`` *(optional)*: the IPv4 address of the node virtual network
   interface (eg. ``10.0.0.1``)
@@ -156,7 +184,9 @@ following parameters:
   interface (eg. ``255.255.255.0``)
 
 These two parameters are globally optionals but they cannot be defined
-separately. They must be either both defined or both undefined.
+separately. They must be either both defined or both undefined. You should
+avoid using these deprecated parameters and definitely prefer ``address``
+parameter instead.
 
 If the node virtual network interface is well configured, the DHCP service can
 then be defined. This service is controled within a dedicated ``dhcp``
@@ -180,17 +210,11 @@ network. It is then used by DHCP and DNS services:
   ``exemple.net``).
 
 Finally, when DHCP service is properly enable, the PXE service can also be
-defined. This service is controled within a dedicated ``pxe`` sub-section. When
-present, this sub-section must contain the following parameters:
+defined. This service is controled within a dedicated ``pxe`` parameter.
+When present, this parameter must specify a path to boot file, either
+relative or absolute.
 
-* ``tftp_dir`` *(optional)*: the path to the directory that contains your
-  ``boot_file``. This path must be relative to the Cloubed YAML file.
-* ``boot_file`` *(optional)*: the name of the boot file within the ``tftp_dir``.
-
-These two parameters are globally optionals but they cannot be defined
-separately. They must be either both defined or both undefined within the
-``pxe`` sub-section. You may need to be familiar with `PXE concepts`_ to use
-these advanced features.
+You may need to be familiar with `PXE concepts`_ to use these advanced features.
 
 .. _PXE concepts: http://en.wikipedia.org/wiki/Preboot_Execution_Environment
 
@@ -245,6 +269,8 @@ DHCP server will attribute IPv4 address in the range from ``10.1.0.100`` to
 boot. Then, TFTP server will serve this file as soon as it is present in
 ``tftp/`` directory.
 
+.. _yaml-domains:
+
 Domains
 -------
 
@@ -252,7 +278,11 @@ The ``domains`` section contains the list of domains.
 be connected to. Here is the list of basic mandatory parameters:
 
 * ``name``: a valid string unique accross all domains
-* ``cpu``: an integer representing the number of CPU for the domain
+* ``cpu``: either an integer representing the number of CPU for the domain,
+  or a string representing a topology in the format
+  ``<sockets>:<cores>:<threads>`` where ``sockets`` is total number of CPU
+  sockets, ``cores`` is the number of cores per socket, and ``threads`` is the
+  number of threads per core.
 * ``memory``: either an integer representing the number of GiB of main memory
   for the domain or a string with an integer and a unit. Valid units are M, MB,
   MiB, G, GB and GIB.
@@ -275,13 +305,18 @@ The sub-section ``disks`` must contain a list of storage volumes for the
 domain. Each storage volume must have the following parameters:
 
 * ``device``: a valid string, the name of the device (not used yet).
-* ``storage_volume``: the name of the storage volume. This storage volume must
-  be defined previously in the dedicated section.
 * ``bus`` *(optional)*: the type of bus through which the disk will be visible
   for the guest OS inside the domain. Valid values are ``virtio``, ``scsi`` and
   ``ide``. Default is ``virtio`` and is recommended for performance reasons.
   Alternative values ``scsi`` and ``ide`` could be useful for guests OS that do
   not support ``virtio`` or for particular setup (ex: multipath, etc).
+
+Then, a domain storage volume must either have all storage volumes parameters
+as specified in :ref:`storage volumes <yaml-storagevolumes>` section (*ex:*
+``name``, ``size`` and so on) or a storage volume reference like this:
+
+* ``storage_volume`` the name of the storage volume. This storage volume must
+  be defined previously in the dedicated section.
 
 The optional sub-section ``virtfs``, if declared, must contain a list of
 directory on the host to export to the domain. With this feature, the domain can

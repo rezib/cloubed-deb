@@ -4,12 +4,13 @@ import os
 
 from CloubedTests import *
 
-from lib.conf.ConfigurationDomain import ConfigurationDomain
-from lib.CloubedException import CloubedConfigurationException
-from lib.VirtController import VirtController
+from cloubed.conf.Configuration import Configuration
+from cloubed.conf.ConfigurationDomain import ConfigurationDomain
+from cloubed.CloubedException import CloubedConfigurationException
+from cloubed.VirtController import VirtController
+from Mock import MockConfigurationLoader, conf_minimal
 
 valid_domain_item = { 'name': 'test_name',
-                      'testbed': 'test_testbed',
                       'cpu': 2,
                       'memory': 1,
                       'netifs': [
@@ -17,8 +18,8 @@ valid_domain_item = { 'name': 'test_name',
                             'ip': '10.0.0.1' } ],
                       'disks': [
                           { 'device': 'test_device',
-                            'storage_volume': 'test_storage_volume',
-                            'bus': 'virtio' } ],
+                            'bus': 'virtio',
+                            'storage_volume': 'test_storage_volume' } ],
                       'virtfs': [
                           { 'source': '/test_source',
                             'target': 'test_target' } ] }
@@ -29,7 +30,9 @@ class TestConfigurationDomain(CloubedTestCase):
 
     def setUp(self):
         self._domain_item = valid_domain_item
-        self.domain_conf = ConfigurationDomain(self._domain_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.domain_conf = ConfigurationDomain(self.conf, self._domain_item)
 
     def test_get_type(self):
         """
@@ -39,10 +42,11 @@ class TestConfigurationDomain(CloubedTestCase):
 
     def test_attr_cpu(self):
         """
-            ConfigurationDomain.cpu should be the cpu of the domain
+            ConfigurationDomain.cores should be the cpu of the domain
         """
-        self.assertEqual(self.domain_conf.cpu,
-                         2)
+        self.assertEqual(self.domain_conf.sockets, 1)
+        self.assertEqual(self.domain_conf.cores, 2)
+        self.assertEqual(self.domain_conf.threads, 1)
 
     def test_attr_memory(self):
         """
@@ -90,7 +94,20 @@ class TestConfigurationDomainCpu(CloubedTestCase):
 
     def setUp(self):
         self._domain_item = valid_domain_item
-        self.domain_conf = ConfigurationDomain(self._domain_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.domain_conf = ConfigurationDomain(self.conf, self._domain_item)
+
+    def test_parse_cpu_topology(self):
+        """
+            ConfigurationDomain.__parse_cpu() should properly parse topology
+        """
+
+        config = { 'cpu': '2x3x4' }
+        self.domain_conf._ConfigurationDomain__parse_cpu(config)
+        self.assertEquals(self.domain_conf.sockets, 2)
+        self.assertEquals(self.domain_conf.cores, 3)
+        self.assertEquals(self.domain_conf.threads, 4)
 
     def test_parse_cpu_missing(self):
         """
@@ -112,7 +129,7 @@ class TestConfigurationDomainCpu(CloubedTestCase):
             parameter
         """
 
-        invalid_configs = [ { 'cpu': 'x'  },
+        invalid_configs = [ { 'cpu': []  },
                             { 'cpu': {}   },
                             { 'cpu': None } ]
 
@@ -123,11 +140,32 @@ class TestConfigurationDomainCpu(CloubedTestCase):
                      self.domain_conf._ConfigurationDomain__parse_cpu,
                      invalid_config)
 
+    def test_parse_cpu_invalid_topology(self):
+        """
+            ConfigurationDomain.__parse_cpu() should raise
+            CloubedConfigurationException when invalid cpu topology
+            is given
+        """
+
+        invalid_configs = [ { 'cpu': 'fail'  },
+                            { 'cpu': '2x3'   },
+                            { 'cpu': '1xfailx3' },
+                            { 'cpu': '2x5x3x4' } ]
+
+        for invalid_config in invalid_configs:
+            self.assertRaisesRegexp(
+                     CloubedConfigurationException,
+                     "format of cpu topology of domain test_name is not valid",
+                     self.domain_conf._ConfigurationDomain__parse_cpu,
+                     invalid_config)
+
 class TestConfigurationDomainMemory(CloubedTestCase):
 
     def setUp(self):
         self._domain_item = valid_domain_item
-        self.domain_conf = ConfigurationDomain(self._domain_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.domain_conf = ConfigurationDomain(self.conf, self._domain_item)
 
     def test_parse_memory_ok(self):
         """
@@ -216,7 +254,9 @@ class TestConfigurationDomainGraphics(CloubedTestCase):
 
     def setUp(self):
         self._domain_item = valid_domain_item
-        self.domain_conf = ConfigurationDomain(self._domain_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.domain_conf = ConfigurationDomain(self.conf, self._domain_item)
 
     def test_parse_graphics_ok(self):
         """
@@ -275,7 +315,9 @@ class TestConfigurationDomainNetifs(CloubedTestCase):
 
     def setUp(self):
         self._domain_item = valid_domain_item
-        self.domain_conf = ConfigurationDomain(self._domain_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.domain_conf = ConfigurationDomain(self.conf, self._domain_item)
 
     def test_parse_netifs_missing(self):
         """
@@ -425,7 +467,44 @@ class TestConfigurationDomainDisks(CloubedTestCase):
 
     def setUp(self):
         self._domain_item = valid_domain_item
-        self.domain_conf = ConfigurationDomain(self._domain_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.domain_conf = ConfigurationDomain(self.conf, self._domain_item)
+
+    def test_parse_disks_ok(self):
+        """
+            ConfigurationDomain.__parse_disks() should properly parse disks
+            when the disks section is OK
+        """
+
+        config = { 'disks': [ { 'device': 'test_device',
+                                'storage_volume': 'test_storage_volume' },
+                              { 'device': 'test_device',
+                                'name': 'test_name1',
+                                'size': 30 },
+                              { 'device': 'test_device',
+                                'name': 'test_name2',
+                                'storagepool': 'test_storage_pool',
+                                'size': 30 },
+                              { 'device': 'test_device',
+                                'name': 'test_name3',
+                                'size': 30,
+                                'storagepool': 'test_storage_pool',
+                                'type': 'qcow2' },
+                              { 'device': 'test_device',
+                                'name': 'test_name4',
+                                'size': 30,
+                                'storagepool': 'test_storage_pool',
+                                'type': 'qcow2',
+                                'backing': 'test_backing' } ] }
+
+        self.domain_conf._ConfigurationDomain__parse_disks(config)
+        self.assertEqual(self.domain_conf.disks[0]['device'], 'test_device')
+        self.assertEqual(self.domain_conf.disks[0]['storage_volume'], 'test_storage_volume')
+        self.assertEqual(self.domain_conf.disks[1]['storage_volume'], 'test_name1')
+        self.assertEqual(self.domain_conf.disks[2]['storage_volume'], 'test_name2')
+        self.assertEqual(self.domain_conf.disks[3]['storage_volume'], 'test_name3')
+        self.assertEqual(self.domain_conf.disks[4]['storage_volume'], 'test_name4')
 
     def test_parse_disks_missing(self):
         """
@@ -498,23 +577,6 @@ class TestConfigurationDomainDisks(CloubedTestCase):
                      self.domain_conf._ConfigurationDomain__parse_disks,
                      invalid_config)
 
-    def test_parse_disks_missing_storage_volume(self):
-        """
-            ConfigurationDomain.__parse_disks() should raise
-            CloubedConfigurationException when disks in parameter have not any
-            storage volume
-        """
-
-        invalid_configs = [ { 'disks': [ { 'device': 'test_device' } ] } ]
-
-        for invalid_config in invalid_configs:
-
-            self.assertRaisesRegexp(
-                     CloubedConfigurationException,
-                     "storage volume of disk 0 of domain test_name is missing",
-                     self.domain_conf._ConfigurationDomain__parse_disks,
-                     invalid_config)
-
     def test_parse_disks_invalid_device(self):
         """
             ConfigurationDomain.__parse_disks() should raise
@@ -522,10 +584,8 @@ class TestConfigurationDomainDisks(CloubedTestCase):
             device
         """
 
-        invalid_configs = [ { 'disks': [ { 'device': None,
-                                           'storage_volume': 'test_storage_volume' } ] },
-                            { 'disks': [ { 'device' : 42,
-                                           'storage_volume': 'test_storage_volume' } ] } ]
+        invalid_configs = [ { 'disks': [ { 'device': None } ] },
+                            { 'disks': [ { 'device': 42   } ] } ]
 
         for invalid_config in invalid_configs:
 
@@ -536,27 +596,6 @@ class TestConfigurationDomainDisks(CloubedTestCase):
                      self.domain_conf._ConfigurationDomain__parse_disks,
                      invalid_config)
 
-    def test_parse_disks_invalid_storage_volume(self):
-        """
-            ConfigurationDomain.__parse_disks() should raise
-            CloubedConfigurationException when disks in parameter have invalid
-            storage volume
-        """
-
-        invalid_configs = [ { 'disks': [ { 'device': 'test_device',
-                                           'storage_volume': None } ] },
-                            { 'disks': [ { 'device': 'test_device',
-                                           'storage_volume': 42 } ] } ]
-
-        for invalid_config in invalid_configs:
-
-            self.assertRaisesRegexp(
-                     CloubedConfigurationException,
-                     "format of storage volume of disk 0 of domain test_name " \
-                     "is not valid",
-                     self.domain_conf._ConfigurationDomain__parse_disks,
-                     invalid_config)
-
     def test_parse_disks_bus_ok(self):
         """
             ConfigurationDomain.__parse_disks() should properly set disk bus
@@ -564,8 +603,8 @@ class TestConfigurationDomainDisks(CloubedTestCase):
         """
 
         conf = { 'disks': [ { 'device': 'test_device',
-                              'storage_volume': 'test_storage_volume',
-                              'bus': 'scsi' } ] }
+                              'bus': 'scsi',
+                              'storage_volume': 'test_storage_volume' } ] }
 
         self.domain_conf._ConfigurationDomain__parse_disks(conf)
         self.assertEqual(self.domain_conf.disks,
@@ -586,10 +625,8 @@ class TestConfigurationDomainDisks(CloubedTestCase):
         """
 
         invalid_configs = [ { 'disks': [ { 'device': 'test_device',
-                                           'storage_volume': 'test_storage_volume',
                                            'bus': 42 } ] },
                             { 'disks': [ { 'device': 'test_device',
-                                           'storage_volume': 'test_storage_volume',
                                            'bus': None } ] } ]
 
         for invalid_config in invalid_configs:
@@ -609,7 +646,6 @@ class TestConfigurationDomainDisks(CloubedTestCase):
         """
 
         invalid_config = { 'disks': [ { 'device': 'test_device',
-                                        'storage_volume': 'test_storage_volume',
                                         'bus': 'fail' } ] }
 
         self.assertRaisesRegexp(
@@ -619,11 +655,96 @@ class TestConfigurationDomainDisks(CloubedTestCase):
                  self.domain_conf._ConfigurationDomain__parse_disks,
                  invalid_config)
 
+
+    def test_parse_disks_missing_storage_volume_name(self):
+        """
+            ConfigurationDomain.__parse_disks() should raise
+            CloubedConfigurationException when disks in parameter have not any
+            storage volume or name
+        """
+
+        invalid_configs = [ { 'disks': [ { 'device': 'test_device' } ] } ]
+
+        for invalid_config in invalid_configs:
+
+            self.assertRaisesRegexp(
+                     CloubedConfigurationException,
+                     "storage_volume or name parameters of disk 0 of domain " \
+                     "test_name are missing",
+                     self.domain_conf._ConfigurationDomain__parse_disks,
+                     invalid_config)
+
+    def test_parse_disks_conflict_storage_volume_name(self):
+        """
+            ConfigurationDomain.__parse_disks() should raise
+            CloubedConfigurationException when disks in parameter have
+            conflicting storage volume and name
+        """
+
+        invalid_configs = [ { 'disks': [ { 'device': 'test_device',
+                                           'storage_volume': 'test_storage_volume',
+                                           'name': 'test_name' } ] } ]
+
+        for invalid_config in invalid_configs:
+
+            self.assertRaisesRegexp(
+                     CloubedConfigurationException,
+                     "storage_volume and name parameters of disk 0 of domain "\
+                     "test_name are conflicting",
+                     self.domain_conf._ConfigurationDomain__parse_disks,
+                     invalid_config)
+
+    def test_parse_disks_invalid_storage_volume_name(self):
+        """
+            ConfigurationDomain.__parse_disks() should raise
+            CloubedConfigurationException when disks in parameter have invalid
+            storage volume name
+        """
+
+        invalid_configs = [ { 'disks': [ { 'device': 'test_device',
+                                           'storage_volume': None } ] },
+                            { 'disks': [ { 'device': 'test_device',
+                                           'storage_volume': 42 } ] } ]
+
+        for invalid_config in invalid_configs:
+
+            self.assertRaisesRegexp(
+                     CloubedConfigurationException,
+                     "format of storage_volume parameter of disk 0 of domain " \
+                     "test_name is not valid",
+                     self.domain_conf._ConfigurationDomain__parse_disks,
+                     invalid_config)
+
+    def test_parse_disks_invalid_storage_volume_item(self):
+        """
+            ConfigurationDomain.__parse_disks() should raise
+            CloubedConfigurationException when disks in parameter have invalid
+            storage volume item
+        """
+
+        invalid_configs = [ { 'disks': [ { 'device': 'test_device',
+                                           'name': 'test_name' } ] },
+                            { 'disks': [ { 'device': 'test_device',
+                                           'name': None,
+                                           'size': 42 } ] },
+                            { 'disks': [ { 'device': 'test_device',
+                                           'name': 'test_name',
+                                           'size': 'fail' } ] } ]
+
+        for invalid_config in invalid_configs:
+
+            self.assertRaises(
+                     CloubedConfigurationException,
+                     self.domain_conf._ConfigurationDomain__parse_disks,
+                     invalid_config)
+
 class TestConfigurationDomainCdrom(CloubedTestCase):
 
     def setUp(self):
         self._domain_item = valid_domain_item
-        self.domain_conf = ConfigurationDomain(self._domain_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.domain_conf = ConfigurationDomain(self.conf, self._domain_item)
 
     def test_parse_cdrom_ok(self):
         """
@@ -668,7 +789,9 @@ class TestConfigurationDomainVirtfs(CloubedTestCase):
 
     def setUp(self):
         self._domain_item = valid_domain_item
-        self.domain_conf = ConfigurationDomain(self._domain_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.domain_conf = ConfigurationDomain(self.conf, self._domain_item)
 
     def test_parse_virtfs_missing(self):
         """
@@ -798,7 +921,9 @@ class TestConfigurationDomainTemplates(CloubedTestCase):
 
     def setUp(self):
         self._domain_item = valid_domain_item
-        self.domain_conf = ConfigurationDomain(self._domain_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.domain_conf = ConfigurationDomain(self.conf, self._domain_item)
 
     def test_parse_templates_ok(self):
         """

@@ -1,0 +1,30 @@
+testbed: debian
+networks:
+    - name: net
+      forward: nat
+      address: 10.5.0.1/24
+      dhcp:
+        start: 10.5.0.10
+        end: 10.5.0.100
+      pxe: http/debian.ipxe
+domains:
+    - name: vmtest
+      cpu: 2
+      memory: 1
+      netifs:
+          - network: net   # eth0
+            ip: 10.5.0.10
+      graphics: spice
+      disks:
+          - device: sda
+            name: server
+            size: 70
+            format: qcow2
+      templates:
+          files:
+              - name: preseed
+                input: templates/preseed.cfg
+                output: http/preseed.cfg
+              - name: ipxe
+                input: templates/debian.ipxe
+                output: http/debian.ipxe

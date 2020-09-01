@@ -24,6 +24,28 @@ Available actions:
   boot
     Boot a domain and create all required resources.
 
+  shutdown
+    Shutdown gracefully a domain by sending the instruction to the OS through
+    ACPI.
+
+  destroy
+    Shutdown instantly a domain without telling anything to the OS. It may
+    cause data loss and corrupt the system.
+
+  reboot
+    Reboot gracefully a domain by sending the instruction to the OS through
+    ACPI.
+
+  reset
+    Cold-reset a domain without telling anything to the OS. It may cause data
+    loss and corrupt the system.
+
+  suspend
+    Suspend a domain into its RAM within ACPI S3 state.
+
+  resume
+    Resume a previously suspended domain.
+
   wait
     Wait for an event to occur on a domain.
 
@@ -74,6 +96,48 @@ Optional arguments for `boot` action:
                     **no** for none, or a list of network names separated by
                     blank spaces. Default is **no**.
 
+Shutdown options
+----------------
+
+Required arguments for `shutdown` action:
+
+    --domain=DOMAIN  The domain name to boot.
+
+Destroy options
+---------------
+
+Required arguments for `destroy` action:
+
+    --domain=DOMAIN  The domain name to boot.
+
+Reboot options
+--------------
+
+Required arguments for `reboot` action:
+
+    --domain=DOMAIN  The domain name to boot.
+
+Reset options
+-------------
+
+Required arguments for `reset` action:
+
+    --domain=DOMAIN  The domain name to boot.
+
+Suspend options
+---------------
+
+Required arguments for `suspend` action:
+
+    --domain=DOMAIN  The domain name to boot.
+
+Resume options
+--------------
+
+Required arguments for `resume` action:
+
+    --domain=DOMAIN  The domain name to boot.
+
 Wait options
 ------------
 
@@ -83,6 +147,7 @@ Required arguments for `wait` action:
     --event=EVENT    The event to wait for. The event should be supported by
                      Libvirt and it should be specified in the form
                      `type`:`detail`.
+    --enable-http    Enable internal HTTP server. It is disabled by default.
 
 Gen options
 -----------
