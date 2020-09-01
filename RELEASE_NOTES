@@ -1,0 +1,101 @@
+cloubed 0.6
+-----------
+
+  * Add new optional CPU topology feature
+  * Add feature to control domain power status through API and CLI (#45)
+  * Add new fake IPMI gateway pwctlgw in contribs over power status API
+  * Many unit tests improvements
+
+cloubed 0.5
+-----------
+
+  * Internal HTTP server is now disable by default in wait action. Added flag
+    --enable-http to CLI and enable_http parameter in API (#34)
+  * Ability to wait for a TCP socket to open (ex: tcp:22) additionally to
+    Libvirt events (#35)
+  * storagepools section is now optional in YAML, default storage pool
+    implicitely created (#38)
+  * pool parameter for storage volumes is now optional when only one storage
+    pool is declared (#39)
+  * Storage volumes can now be directly defined within disk domains sub-section
+    instead of dedicated storagevolumes section. This makes storagevolumes
+    section optional (#40)
+  * TFTP file name and directory can now be defined using dir/file syntax in
+    pxe param (#41)
+  * Network address can now be defined using CIDR syntax instead of
+    ip_host/netmask deprecated params (#42)
+  * Add new template variable with full URL to internal HTTP server (#43)
+  * Rename all API functions to be conform with CLI (#44)
+  * Back to a more standard python package layout (#36)
+
+cloubed 0.4
+-----------
+
+  * New action vars on script to print all template variables
+  * Support boot on directly from ISO (#11)
+  * Support snapshoting of domains with volumes backing (#9)
+  * Support of virtfs with 9p filesystem to mount directory from host (#23)
+  * New optional domain parameter for networks in YAML file
+  * Support explicit bus type for disks
+  * Support of static MAC address on netifs
+  * Automatically detect other networks with conflicting IP settings on
+    creation (#30)
+  * Enable serial console on domains
+  * Large code refactoring with new VirtController class (#22)
+  * Set VNC instead of Spice as default graphic console protocol with old
+    versions of Libvirt (#25)
+  * Print dynamically allocated spice/vnc port on domain boot (#27)
+  * Cleanup action also deletes files created from templates (#29)
+  * Code coverage of unit tests largely increased
+  * Several small bug fixes and various code cleanups, esp. issues:
+    - #28 fix bug on non-existing input template file
+
+cloubed 0.3
+-----------
+
+  * New xml action on script to print XML generated for libvirt (#19)
+  * New status action on script to print current status of resources in libvirt (#10)
+  * Support usage of already existing bridges on the node as network
+  * Set spice as the default value for domains graphics
+  * Better checks of disks to overwrite and networks to recreate
+  * New functions to get list of resources in API (#16)
+  * Rock solid YAML parsing with exceptions
+  * API exported through __init__.py instead of cloubed.py (#18)
+    Warning: it implies changes on import statement in external scripts!
+  * First set of unit tests with 100% coverage on YAML and CLI parsing (#17)
+  * Better coherency checking logic in CLI args parsing
+  * Migration setup.py from deprecated distutils to setuptools
+  * New sphinx documentation with manpage (#15) and reference API (#12)
+  * Debian and RPM packages built and released (#13, #14)
+  * Several small bug fixes and various code cleanups, esp. issues:
+    - #20: avoid call to unreliable os.getlogin()
+
+cloubed 0.2
+-----------
+
+  * New cloubed utility script
+  * Support of python 2.6
+  * Automatic namespace in libvirt to avoid conflicts between testbeds
+  * Added cleanup() function in library to destroy every resources
+  * Added create_network() function in library to create networks only
+  * Support of static-IP addresses assignment in DHCP
+  * Support of global template variables in YAML
+  * Support of domain contextual template variables in YAML
+  * Allow memory specification in MB in YAML for domains
+  * Enable spice listening port auto-allocation
+  * Enable automatic host-model CPU allocation
+  * Added some documentation in README file
+  * Added examples of testbed with debian and centos
+  * Many code refactoring and cleanup
+  * Many bug fixes, esp. issues:
+    - #1: Cloubed hangs with error `/usr/bin/kvm: No such file or directory`
+    - #2: Not compatible with some models of CPU on the host
+    - #3: Stuck in wait_event() with no event received
+    - #4: Error not correctly managed on missing cloubed.yaml file
+    - #7: Error message Address already in use
+    - #8: Exception in threads when python script exits
+
+cloubed 0.1
+-----------
+
+  * Initial release

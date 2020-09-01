@@ -4,17 +4,20 @@ import os
 
 from CloubedTests import *
 
-from lib.conf.ConfigurationNetwork import ConfigurationNetwork
-from lib.CloubedException import CloubedConfigurationException
+from cloubed.conf.Configuration import Configuration
+from cloubed.conf.ConfigurationNetwork import ConfigurationNetwork
+from cloubed.CloubedException import CloubedConfigurationException
+from Mock import MockConfigurationLoader, conf_minimal
 
-valid_network_item = { 'testbed': 'test_testbed_name',
-                       'name': 'test_network_name' }
+valid_network_item = { 'name': 'test_network_name' }
 
 class TestConfigurationNetwork(CloubedTestCase):
 
     def setUp(self):
         self._network_item = valid_network_item
-        self.network_conf = ConfigurationNetwork(self._network_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.network_conf = ConfigurationNetwork(self.conf, self._network_item)
 
     def test_get_type(self):
         """
@@ -35,7 +38,9 @@ class TestConfigurationNetworkForwardMode(CloubedTestCase):
 
     def setUp(self):
         self._network_item = valid_network_item
-        self.network_conf = ConfigurationNetwork(self._network_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.network_conf = ConfigurationNetwork(self.conf, self._network_item)
 
     def test_parse_forward_mode_ok(self):
         """
@@ -93,7 +98,9 @@ class TestConfigurationNetworkBridgeName(CloubedTestCase):
 
     def setUp(self):
         self._network_item = valid_network_item
-        self.network_conf = ConfigurationNetwork(self._network_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.network_conf = ConfigurationNetwork(self.conf, self._network_item)
 
     def test_parse_bridge_name_ok(self):
         """
@@ -176,7 +183,9 @@ class TestConfigurationNetworkIpHostNetmask(CloubedTestCase):
 
     def setUp(self):
         self._network_item = valid_network_item
-        self.network_conf = ConfigurationNetwork(self._network_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.network_conf = ConfigurationNetwork(self.conf, self._network_item)
 
     def test_parse_ip_host_netmask_ok(self):
         """
@@ -185,6 +194,13 @@ class TestConfigurationNetworkIpHostNetmask(CloubedTestCase):
             attributes properly
         """
 
+        conf = { 'address': '10.0.0.1/24' }
+        self.network_conf._ConfigurationNetwork__parse_forward_mode(conf)
+        self.network_conf._ConfigurationNetwork__parse_ip_host_netmask(conf)
+        self.assertEqual(self.network_conf.ip_host, '10.0.0.1')
+        self.assertEqual(self.network_conf.netmask, '255.255.255.0')
+
+        # old deprecated parameters
         conf = { 'ip_host': '10.0.0.1',
                  'netmask': '255.255.255.0' }
         self.network_conf._ConfigurationNetwork__parse_forward_mode(conf)
@@ -206,6 +222,23 @@ class TestConfigurationNetworkIpHostNetmask(CloubedTestCase):
         # return False
         self.assertEqual(self.network_conf.has_local_settings(), False)
 
+    def test_parse_address_bridge_mode(self):
+        """
+            ConfigurationNetwork.__parse_ip_host_netmask() should raise
+            CloubedConfigurationException if address is set on network in
+            bridge forwarding mode
+        """
+
+        invalid_conf = { 'forward': 'bridge',
+                         'address': '10.0.0.1/24' }
+        self.network_conf._ConfigurationNetwork__parse_forward_mode(invalid_conf)
+        self.assertRaisesRegexp(
+             CloubedConfigurationException,
+             "address parameter has no sense on network {network} with " \
+             "bridge forwarding mode" \
+                 .format(network=self.network_conf.name),
+             self.network_conf._ConfigurationNetwork__parse_ip_host_netmask,
+             invalid_conf)
     def test_parse_ip_host_netmask_bridge_mode(self):
         """
             ConfigurationNetwork.__parse_ip_host_netmask() should raise
@@ -257,6 +290,22 @@ class TestConfigurationNetworkIpHostNetmask(CloubedTestCase):
              self.network_conf._ConfigurationNetwork__parse_ip_host_netmask,
              invalid_conf)
 
+    def test_parse_ip_host_address_invalid_format(self):
+        """
+            ConfigurationNetwork.__parse_ip_host_netmask() should raise
+            CloubedConfigurationException if the format of the address
+            parameter is not valid
+        """
+
+        invalid_conf = { 'address': [] }
+        self.network_conf._ConfigurationNetwork__parse_forward_mode(invalid_conf)
+        self.assertRaisesRegexp(
+             CloubedConfigurationException,
+             "address parameter format on network {network} is not valid" \
+                 .format(network=self.network_conf.name),
+             self.network_conf._ConfigurationNetwork__parse_ip_host_netmask,
+             invalid_conf)
+
     def test_parse_ip_host_netmask_invalid_format(self):
         """
             ConfigurationNetwork.__parse_ip_host_netmask() should raise
@@ -281,6 +330,27 @@ class TestConfigurationNetworkIpHostNetmask(CloubedTestCase):
                  .format(network=self.network_conf.name),
              self.network_conf._ConfigurationNetwork__parse_ip_host_netmask,
              invalid_conf)
+
+    def test_parse_ip_host_address_invalid_value(self):
+        """
+            ConfigurationNetwork.__parse_ip_host_netmask() should raise
+            CloubedConfigurationException if the value of address parameter
+            is not a valid network address in CIDR syntax
+        """
+
+        invalid_confs = [ { 'address': 'fail'           },
+                          { 'address': '192.168.0.1/35' },
+                          { 'address': '260.0.0.0/24'   } ]
+
+        for invalid_conf in invalid_confs:
+
+            self.network_conf._ConfigurationNetwork__parse_forward_mode(invalid_conf)
+            self.assertRaisesRegexp(
+                 CloubedConfigurationException,
+                 "address parameter on network {network} is not a valid " \
+                 "network address".format(network=self.network_conf.name),
+                 self.network_conf._ConfigurationNetwork__parse_ip_host_netmask,
+                 invalid_conf)
 
     def test_parse_ip_host_netmask_invalid_addresss(self):
         """
@@ -313,7 +383,9 @@ class TestConfigurationNetworkDhcp(CloubedTestCase):
 
     def setUp(self):
         self._network_item = valid_network_item
-        self.network_conf = ConfigurationNetwork(self._network_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.network_conf = ConfigurationNetwork(self.conf, self._network_item)
 
     def test_parse_dhcp_ok(self):
         """
@@ -430,7 +502,9 @@ class TestConfigurationNetworkDomain(CloubedTestCase):
 
     def setUp(self):
         self._network_item = valid_network_item
-        self.network_conf = ConfigurationNetwork(self._network_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.network_conf = ConfigurationNetwork(self.conf, self._network_item)
 
     def test_parse_domain_ok(self):
         """
@@ -500,7 +574,9 @@ class TestConfigurationNetworkPxe(CloubedTestCase):
 
     def setUp(self):
         self._network_item = valid_network_item
-        self.network_conf = ConfigurationNetwork(self._network_item)
+        self._loader = MockConfigurationLoader(conf_minimal)
+        self.conf = Configuration(self._loader)
+        self.network_conf = ConfigurationNetwork(self.conf, self._network_item)
 
     def test_parse_pxe_ok(self):
         """
@@ -517,6 +593,22 @@ class TestConfigurationNetworkPxe(CloubedTestCase):
         self.network_conf._ConfigurationNetwork__parse_forward_mode(conf)
         self.network_conf._ConfigurationNetwork__parse_ip_host_netmask(conf)
         self.network_conf._ConfigurationNetwork__parse_dhcp(conf)
+
+        conf = { 'pxe': '/test_tftp_dir/test_boot_file' }
+        self.network_conf._ConfigurationNetwork__parse_pxe(conf)
+        self.assertEqual(self.network_conf.pxe_tftp_dir, '/test_tftp_dir')
+        self.assertEqual(self.network_conf.pxe_boot_file, 'test_boot_file')
+
+        conf = { 'pxe': 'test_tftp_dir/test_boot_file' }
+        self.network_conf._ConfigurationNetwork__parse_pxe(conf)
+        self.assertEqual(self.network_conf.pxe_tftp_dir,
+                         os.path.join(os.getcwd(),"test_tftp_dir"))
+        self.assertEqual(self.network_conf.pxe_boot_file, 'test_boot_file')
+
+        conf = { 'pxe': 'test_boot_file' }
+        self.network_conf._ConfigurationNetwork__parse_pxe(conf)
+        self.assertEqual(self.network_conf.pxe_tftp_dir, os.getcwd())
+        self.assertEqual(self.network_conf.pxe_boot_file, 'test_boot_file')
 
         conf = { 'pxe':
                      { 'tftp_dir': '/test_tftp_dir', # absolute path
@@ -552,9 +644,7 @@ class TestConfigurationNetworkPxe(CloubedTestCase):
         """
         invalid_conf = { 'ip_host': '10.0.0.1',
                          'netmask': '255.255.255.0',
-                         'pxe':
-                             { 'tftp_dir': 'test_tftp_dir',
-                               'boot_file': 'test_boot_file' } }
+                         'pxe': 'test_tftp_dir/test_boot_file' }
         self.network_conf._ConfigurationNetwork__parse_forward_mode(invalid_conf)
         self.network_conf._ConfigurationNetwork__parse_ip_host_netmask(invalid_conf)
         self.network_conf._ConfigurationNetwork__parse_dhcp(invalid_conf)
@@ -565,11 +655,54 @@ class TestConfigurationNetworkPxe(CloubedTestCase):
              self.network_conf._ConfigurationNetwork__parse_pxe,
              invalid_conf)
 
+    def test_parse_pxe_invalid_format(self):
+        """
+            ConfigurationNetwork.__parse_pxe() should raise
+            CloubedConfigurationException if pxe parameter has an invalid format
+        """
+        invalid_conf = { 'ip_host': '10.0.0.1',
+                         'netmask': '255.255.255.0',
+                         'dhcp':
+                             { 'start': '10.0.0.100',
+                               'end'  : '10.0.0.200' },
+                         'pxe': 42 }
+        self.network_conf._ConfigurationNetwork__parse_forward_mode(invalid_conf)
+        self.network_conf._ConfigurationNetwork__parse_ip_host_netmask(invalid_conf)
+        self.network_conf._ConfigurationNetwork__parse_dhcp(invalid_conf)
+        self.assertRaisesRegexp(
+             CloubedConfigurationException,
+             "format of pxe parameter of network {network} is not valid" \
+                 .format(network=self.network_conf.name),
+             self.network_conf._ConfigurationNetwork__parse_pxe,
+             invalid_conf)
+
+    def test_parse_pxe_missing_boot_file(self):
+        """
+            ConfigurationNetwork.__parse_pxe() should raise
+            CloubedConfigurationException if pxe parameter has a missing boot
+            file
+        """
+        invalid_conf = { 'ip_host': '10.0.0.1',
+                         'netmask': '255.255.255.0',
+                         'dhcp':
+                             { 'start': '10.0.0.100',
+                               'end'  : '10.0.0.200' },
+                         'pxe': 'test_tftp_dir/' }
+        self.network_conf._ConfigurationNetwork__parse_forward_mode(invalid_conf)
+        self.network_conf._ConfigurationNetwork__parse_ip_host_netmask(invalid_conf)
+        self.network_conf._ConfigurationNetwork__parse_dhcp(invalid_conf)
+        self.assertRaisesRegexp(
+             CloubedConfigurationException,
+             "pxe parameter of network {network} must specify a boot file" \
+                 .format(network=self.network_conf.name),
+             self.network_conf._ConfigurationNetwork__parse_pxe,
+             invalid_conf)
+
     def test_parse_pxe_missing_parameter(self):
         """
             ConfigurationNetwork.__parse_pxe() should raise 
             CloubedConfigurationException if one parameter is missing in the pxe
-            section of a network
+            dict of a network
         """
         invalid_conf = { 'ip_host': '10.0.0.1',
                          'netmask': '255.255.255.0',
