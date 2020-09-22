@@ -1,7 +1,9 @@
 #!/usr/bin/make -f
 
+export PYBUILD_NAME=cloubed
+
 %:
-	dh $@ --with python2,sphinxdoc
+	dh $@ --with python3 --buildsystem=pybuild
 
 override_dh_auto_build:
 	dh_auto_build
@@ -10,10 +12,6 @@ override_dh_auto_build:
 	# Manpage generator
 	PYTHONPATH=. http_proxy='localhost' sphinx-build -N -b man doc/ build/man
 
-get-orig-tarball:
-	uscan --verbose --force-download
-
 clean:
-	dh $@
-	rm -rf *.egg-info
-
+	dh_clean
+	rm -rf *.egg-info .pybuild

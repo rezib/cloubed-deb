@@ -3,15 +3,14 @@ Section: net
 Priority: optional
 Maintainer: Rémi Palancher <remi@rezib.org>
 Homepage: http://github.com/rezib/cloubed
-Build-Depends: debhelper (>= 8), python-all (>= 2.6.6-3~), python-setuptools, python-sphinx
-X-Python-Version: >= 2.6
+Build-Depends: debhelper, dh-python, python3-all, python3-setuptools, python3-sphinx, python3-libvirt
 Standards-Version: 3.9.3
 Vcs-Git: https://github.com/rezib/cloubed.git
 Vcs-Browser: https://github.com/rezib/cloubed
 
 Package: cloubed
 Architecture: all
-Depends: ${misc:Depends}, ${python:Depends}, ${sphinxdoc:Depends}
+Depends: ${misc:Depends}, ${python3:Depends}
 Description: Helpful tool to build virtual clusters.
  Full description soon.
 
